@@ -1,0 +1,12 @@
+# Ignore the SOEM third-party source tree to avoid committing large external sources
+src/SOEM/
+
+# Ignore common build output inside SOEM
+src/SOEM/build/
+src/SOEM/install/
+
+# Optional: ignore other generated files
+*.o
+*.a
+*.so
+build/
