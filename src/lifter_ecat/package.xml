@@ -1,0 +1,33 @@
+<package format="2">
+  <name>lifter_ecat</name>
+  <version>0.0.1</version>
+  <description>The lifter_ecat package with SOEM control</description>
+  
+  <!-- Maintainer information -->
+  <maintainer email="your_email@example.com">Your Name</maintainer>
+
+  <!-- License -->
+  <license>MIT</license>
+
+  <!-- ROS2 runtime dependencies -->
+  <exec_depend>rclcpp</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <!-- Add SOEM dependency -->
+  <!-- SOEM is not a ROS2 package, so it must be handled as a system library -->
+  <exec_depend>soem</exec_depend>
+
+  <!-- Build tool dependency -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Build dependencies for compilation -->
+  <build_depend>rclcpp</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>ament_index_cpp</build_depend>
+  <build_depend>yaml-cpp</build_depend>
+
+  <!-- Export for ROS2 to discover this package -->
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

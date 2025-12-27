@@ -5,6 +5,10 @@ src/SOEM/
 src/SOEM/build/
 src/SOEM/install/
 
+build/
+install/
+log/
+
 # Optional: ignore other generated files
 *.o
 *.a
