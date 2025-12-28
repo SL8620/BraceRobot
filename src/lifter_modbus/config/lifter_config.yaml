@@ -1,0 +1,17 @@
+# lifter_config.yaml
+
+lifter:
+  modbus:
+    device: "/dev/ttyCH341USB0"  # 串口设备路径
+    baudrate: 115200             # 波特率
+    parity: "N"                  # 奇偶校验 ('N' - None, 'E' - Even, 'O' - Odd)
+    stopbits: 1                  # 停止位
+    slave_id: 1                  # Modbus 从站地址
+    log_frames: 0                # 是否打印发送的 Modbus 报文 (1 - 是, 0 - 否)    
+  limits:
+    min_height: 0                # 最小高度 (mm)
+    max_height: 150              # 最大高度 (mm) 
+  control:
+    default_speed: 500          # 默认最大速度（RPM）
+    default_acc_time: 500        # 默认加速时间（ms）
+    default_dec_time: 500        # 默认减速时间（ms）

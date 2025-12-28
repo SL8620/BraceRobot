@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+	<name>lifter_modbus</name>
+	<version>0.0.1</version>
+	<description>Modbus-based lifter control node.</description>
+
+	<maintainer email="user@example.com">lifter_modbus_maintainer</maintainer>
+	<license>TODO</license>
+
+	<buildtool_depend>ament_cmake</buildtool_depend>
+
+	<depend>ament_index_cpp</depend>
+	<depend>rclcpp</depend>
+	<depend>std_msgs</depend>
+	<exec_depend>rclpy</exec_depend>
+
+	<export>
+		<build_type>ament_cmake</build_type>
+	</export>
+</package>
+
