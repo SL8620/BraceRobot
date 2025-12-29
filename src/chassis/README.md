@@ -1,0 +1,255 @@
+<div align="center">
+
+  ![Logo White](./docs/logo_white.svg#gh-dark-mode-only)
+
+</div>
+
+<div align="center">
+
+  ![Logo Black](./docs/logo_black.svg#gh-light-mode-only)
+
+</div>
+
+Andino is a fully open-source diff drive robot designed for educational purposes and low-cost applications.
+It is fully integrated with ROS 2 and it is a great base platform to improve skills over the robotics field.
+With its open-source design, anyone can modify and customize the robot to suit their specific needs.
+
+<p align="center">
+  <img src="docs/real_robot.png" width=500 />
+</p>
+
+_Note: For videos go to [Media](#selfie-media) section._
+
+## :books: Package Summary
+
+- :rocket: [`andino_bringup`](./andino_bringup): Contains mainly launch files in order to launch all related driver and nodes to be used in the real robot.
+- :robot: [`andino_hardware`](./andino_hardware): Contains information about the Andino assembly and hardware parts.
+- :ledger: [`andino_description`](./andino_description): Contains the URDF description of the robot.
+- :hammer_and_pick: [`andino_firmware`](./andino_firmware): Contains the code be run in the microcontroller for interfacing low level hardware with the SBC.
+- :gear: [`andino_base`](./andino_base): [ROS Control hardware interface](https://control.ros.org/master/doc/ros2_control/hardware_interface/doc/writing_new_hardware_interface.html) is implemented.
+- :control_knobs: [`andino_control`](./andino_control/): It launches the [`controller_manager`](https://control.ros.org/humble/doc/ros2_control/controller_manager/doc/userdoc.html) along with the [ros2 controllers](https://control.ros.org/master/doc/ros2_controllers/doc/controllers_index.html): [diff_drive_controller](https://control.ros.org/master/doc/ros2_controllers/diff_drive_controller/doc/userdoc.html) and the [joint_state_broadcaster](https://control.ros.org/master/doc/ros2_controllers/joint_state_broadcaster/doc/userdoc.html).
+- :computer: [`andino_gz_classic`](./andino_gz_classic/): [Gazebo Classic](https://classic.gazebosim.org/) simulation of the `andino` robot.
+- :world_map: [`andino_slam`](./andino_slam/): Provides support for SLAM with your `andino` robot.
+- :compass: [`andino_navigation`](./andino_navigation/): Navigation stack based on `nav2`.
+- :exclamation: [`andino_apps`](./andino_apps/): Integrated applications with the `andino` robot.
+
+## :paperclips: Related projects
+
+Projects built upon Andino! :rocket:
+
+- :rocket: [`andino_ansible_config`](https://github.com/garyservin/andino_ansible_config): (**Thanks @garyservin !**): Ansible configuration to easily setup an Andino robot.
+- :computer: [`andino_gz`](https://github.com/Ekumen-OS/andino_gz): [Gazebo](https://gazebosim.org/home)(non-classic)-based simulation of the `andino` robot.
+- :lady_beetle: [`andino_webots`](https://github.com/Ekumen-OS/andino_webots): [Webots](https://github.com/cyberbotics/webots)-based simulation of the Andino robot fully integrated with ROS 2.
+- :joystick: [`andino_o3de`](https://github.com/Ekumen-OS/andino_o3de): [O3DE](https://o3de.org/)-based simulation of the Andino robot.
+- :green_circle: [`andino_isaac`](https://github.com/Ekumen-OS/andino_isaac): [Isaac Sim](https://docs.omniverse.nvidia.com/isaacsim/latest/index.html)-based simulation of the Andino robot.
+- :m: [`andino_mujoco`](https://github.com/Ekumen-OS/andino_mujoco): [MuJoCo](https://mujoco.org/)-based simulation of the Andino robot.
+- :robot: [`andino_rmf`](https://github.com/Ekumen-OS/andino_rmf): [OpenRMF](https://www.open-rmf.org/) integration of Andino simulation.
+- :test_tube: [`andino_integration_tests`](https://github.com/Ekumen-OS/andino_integration_tests): Extension to the Andino robot showing how to build integration tests.
+- :framed_picture: [`andino_lichtblick`](https://github.com/Ekumen-OS/andino_lichtblick): [Lichtblick](https://github.com/lichtblick-suite/lichtblick/) integration with Andino for web-based visualization.
+- :crab: [`andino-rs`](https://github.com/Ekumen-OS/andino-rs): Rustacean version of *andino* robot. It also provides integration with [*dora*](https://github.com/dora-rs/dora) framework for both real and simulated *andino*.
+- :nerd_face: [`robotics_essentials_ros2`](https://github.com/henki-robotics/robotics_essentials_ros2): ROS 2 Essentials material for robotic course at [*University of Eastern Finland*](https://www.uef.fi/en).
+
+## :busts_in_silhouette: Community
+
+[<img src="docs/discord-mark-blue.png" width=30 hspace="20"/>](https://discord.gg/tHhH32CTHu) Join our Discord and contribute to the community!
+
+
+## :pick: Robot Assembly
+
+Visit [`andino_hardware`](./andino_hardware/) for assembly instructions.
+
+## :mechanical_arm: Installation
+
+Remember to first go over the assembly instructions at [`andino_hardware`](./andino_hardware/)!
+
+### Platforms
+
+- ROS 2: Humble Hawksbill
+- OS:
+  - Ubuntu 22.04 Jammy Jellyfish
+  - Ubuntu Mate 22.04 (On real robot (e.g: Raspberry Pi 4B))
+
+### Via ansible
+
+See [`andino_ansible_config`](https://github.com/garyservin/andino_ansible_config): This repository contains Ansible configurations for managing and automating the setup and configuration of an Andino robot.
+
+### Build from Source
+
+#### Dependencies
+
+1. Install [ROS 2](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debians.html)
+2. Install [colcon](https://colcon.readthedocs.io/en/released/user/installation.html)
+
+#### colcon workspace
+
+Packages here provided are colcon packages. As such a colcon workspace is expected:
+
+1. Create colcon workspace
+
+```
+mkdir -p ~/ws/src
+```
+
+2. Clone this repository in the `src` folder
+
+```
+cd ~/ws/src
+```
+
+```
+git clone https://github.com/Ekumen-OS/andino.git
+```
+
+3. Install dependencies via `rosdep`
+
+```
+cd ~/ws
+```
+
+```
+rosdep install --from-paths src --ignore-src -i -y
+```
+
+4. Build the packages
+
+```
+colcon build
+```
+
+5. Finally, source the built packages
+   If using `bash`:
+
+```
+source install/setup.bash
+```
+
+`Note`: Whether your are installing the packages in your dev machine or in your robot the procedure is the same. Remember to go over the assembly instructions first.
+
+### Install the binaries
+
+The packages have been also released via ROS package manager system for the 'humble' distro. You can check them [here](https://repo.ros2.org/status_page/ros_humble_default.html?q=andino).
+
+These packages can be installed using `apt` (e.g: `sudo apt install ros-humble-andino-description`) or using `rosdep`.
+
+## :rocket: Usage
+
+### Robot bringup
+
+`andino_bringup` contains launch files that concentrates the process that brings up the robot.
+
+After installing and sourcing the andino's packages simply run.
+
+```
+ros2 launch andino_bringup andino_robot.launch.py
+```
+
+This launch files initializes the differential drive controller and brings ups the system to interface with ROS.
+By default sensors like the camera and the lidar are initialized. This can be disabled via arguments and manage each initialization separately. See `ros2 launch andino_bringup andino_robot.launch.py -s ` for checking out the arguments.
+
+- include_rplidar: `true` as default.
+- include_camera: `true` as default.
+
+After the robot is launched, use `ROS 2 CLI` for inspecting environment.
+For example, by doing `ros2 topic list` the available topics can be displayed:
+
+    /camera_info
+    /cmd_vel
+    /image_raw
+    /odom
+    /robot_description
+    /scan
+    /tf
+    /tf_static
+
+   _Note: Showing just some of them_
+
+### Teleoperation
+
+Launch files for using the keyboard or a joystick for teleoperating the robot are provided.
+
+#### Keyboard
+
+```
+ros2 launch andino_bringup teleop_keyboard.launch.py
+```
+This is similarly to just executing `ros2 run teleop_twist_keyboard teleop_twist_keyboard`.
+
+#### Joystick
+
+Using a joystick for teleoperating is notably better.
+You need the joystick configured as explained [here](andino_hardware/README.md#Using-joystick-for-teleoperation).
+```
+ros2 launch andino_bringup teleop_joystick.launch.py
+```
+
+### RViz
+
+Use:
+
+```
+ros2 launch andino_bringup rviz.launch.py
+```
+
+For starting `rviz2` visualization with a provided configuration.
+
+## :compass: Navigation
+
+The [`andino_navigation`](./andino_navigation/README.md) package provides a navigation stack based on the great [Nav2](https://github.com/ros-planning/navigation2) package.
+
+https://github.com/Ekumen-OS/andino/assets/53065142/29951e74-e604-4a6e-80fc-421c0c6d8fee
+
+Follow the [`andino_navigation`'s README](./andino_navigation/README.md) instructions for bringing up the Navigation stack in the real robot or in the simulation.
+
+## :computer: Simulation
+
+<img src="https://github.com/Ekumen-OS/andino_gz/blob/humble/docs/media/andino_gz.png" width=600/>
+
+Within the Andino ecosystem simulations on several platforms are provided:
+ - [`andino_gz_classic`](./andino_gz_classic/README.MD) - (To be deprecated as of Jazzy)
+ - [`andino_gz`](https://github.com/Ekumen-OS/andino_gz) - **Recommended**
+ - [`andino_webots`](https://github.com/Ekumen-OS/andino_webots)
+ - [`andino_o3de`](https://github.com/Ekumen-OS/andino_o3de)
+ - [`andino_isaac`](https://github.com/Ekumen-OS/andino_isaac)
+
+
+
+
+
+## :selfie: Media
+
+### RVIZ Visualization
+
+https://github.com/Ekumen-OS/andino/assets/53065142/c9878894-1785-4b81-b1ce-80e07a27effd
+
+### Slam
+
+Using the robot for mapping.
+
+https://github.com/Ekumen-OS/andino/assets/53065142/283f4afd-0f9a-4d37-b71f-c9d7b2f3e453
+
+https://github.com/Ekumen-OS/andino/assets/53065142/d73f6053-b422-4334-8f62-029a38799e66
+
+
+See [`andino_slam`](./andino_slam/) for more information.
+
+## :robot: Share your Andino!
+
+Have you built your `Andino` already? Please go to [`Show & Tell`](https://github.com/Ekumen-OS/andino/discussions/categories/show-and-tell) Discussion and share with us your own version of it.
+
+
+## :star2: Inspirational sources
+
+This section is dedicated to recognizing and expressing gratitude to the open-source repositories that have served as a source of inspiration for this project. We highly recommend exploring these repositories for further inspiration and learning.
+
+ * [articubot_one](https://github.com/joshnewans/articubot_one)
+ * [diffbot](https://github.com/ros-mobile-robots/diffbot)
+ * [noah_hardware](https://github.com/GonzaCerv/noah-hardware)
+ * [linorobot](https://github.com/linorobot/linorobot2)
+
+## :raised_hands: Contributing
+
+Issues or PRs are always welcome! Please refer to [CONTRIBUTING](CONTRIBUTING.md) doc.
+
+## Code development
+
+Note that a [`Docker`](./docker) folder is provided for easy setting up the workspace.
