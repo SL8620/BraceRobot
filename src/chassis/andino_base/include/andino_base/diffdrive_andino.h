@@ -76,6 +76,7 @@ class DiffDriveAndino : public hardware_interface::SystemInterface {
   const std::string kBaudRateParam{"baud_rate"};
   const std::string kTimeoutParam{"timeout"};
   const std::string kEncTicksPerRevParam{"enc_ticks_per_rev"};
+  const std::string kCanChannelParam{"can_channel"};
 
   // Configuration parameters for the DiffDriveAndino class.
   struct Config {
@@ -84,6 +85,7 @@ class DiffDriveAndino : public hardware_interface::SystemInterface {
     std::string right_wheel_name = "right_wheel";
     // Encoder parameters.
     int enc_ticks_per_rev = 700;
+    int can_channel = 0;
     // Communication parameters.
     std::string serial_device = "/dev/ttyUSB0";
     int baud_rate = 57600;

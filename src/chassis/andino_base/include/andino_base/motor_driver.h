@@ -88,12 +88,18 @@ class MotorDriver {
   /// @return 响应字符串
   std::string SendMsg(const std::string& msg_to_send);
 
+  /// @brief 设置 CAN 通道号，允许选择不同的 Kvaser 设备。
+  /// @param can_channel Kvaser CAN 通道号（如 0、1 等）。
+  void SetCanChannel(int can_channel);
+
  private:
   mutable std::mutex mutex_;  ///< 线程安全锁
-    std::vector<MOTOR> motors_vec_;  // 存储电机对象，替代原来的局部数组
-    MOTOR* motors_ptr_ = nullptr;    // 指向 motors_vec_ 的指针，供 kvaser_ 使用
-    KvaserForGold* kvaser_ = nullptr; // CAN 总线对象
+  std::vector<MOTOR> motors_vec_;  // 存储电机对象，替代原来的局部数组
+  MOTOR* motors_ptr_ = nullptr;    // 指向 motors_vec_ 的指针，供 kvaser_ 使用
+  KvaserForGold* kvaser_ = nullptr; // CAN 总线对象
 
+  // 选择使用的 Kvaser CAN 通道号（默认 0）
+  int can_channel_{0};
 
   // 电机数量（通常为 2）
   int num_nodes_{6};

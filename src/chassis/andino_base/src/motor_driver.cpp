@@ -21,7 +21,7 @@
 
 namespace andino_base {
 
-MotorDriver::MotorDriver() : kvaser_(nullptr), num_nodes_(2), timeout_ms_(200)
+MotorDriver::MotorDriver() : kvaser_(nullptr), can_channel_(0), num_nodes_(2), timeout_ms_(200)
 {
 	// default node ids: change if your system uses different ids
 	node_ids_.push_back(1);
@@ -48,6 +48,12 @@ MotorDriver::~MotorDriver()
 	}
 }
 
+void MotorDriver::SetCanChannel(int can_channel)
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	can_channel_ = can_channel;
+}
+
 void MotorDriver::Setup(const std::string& , int32_t /*baud_rate*/,int motor_id) 
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -70,13 +76,13 @@ void MotorDriver::Setup(const std::string& , int32_t /*baud_rate*/,int motor_id)
     m.encoder.AbsZeroPos = 0;
     m.InitPos = 0.0;
 
-    motors_ptr_ = motors_vec_.data();
-    num_nodes_ = motors_vec_.size();
+	motors_ptr_ = motors_vec_.data();
+	num_nodes_ = motors_vec_.size();
 
-    if (!kvaser_) 
+	if (!kvaser_) 
 	{
-        kvaser_ = new KvaserForGold(0, num_nodes_, motors_ptr_, "TestMotor");
-    }
+		kvaser_ = new KvaserForGold(can_channel_, num_nodes_, motors_ptr_, "TestMotor");
+	}
 
     kvaser_->connectMotor(&m);
     kvaser_->RPDOconfig(&m, KvaserForGold::SPEED_MODE);

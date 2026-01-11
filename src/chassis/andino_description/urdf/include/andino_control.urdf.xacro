@@ -19,6 +19,7 @@
         <param name="baud_rate">${hardware_props['baud_rate']}</param>
         <param name="timeout">${hardware_props['timeout']}</param>
         <param name="enc_ticks_per_rev">${hardware_props['enc_ticks_per_rev']}</param>
+        <param name="can_channel">${hardware_props['can_channel']}</param>
       </hardware>
       <joint name="left_wheel_joint">
         <command_interface name="velocity">

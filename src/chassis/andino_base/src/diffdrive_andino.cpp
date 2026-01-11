@@ -32,6 +32,18 @@ hardware_interface::CallbackReturn DiffDriveAndino::on_init(const hardware_inter
 				(kEncTicksPerRevParam + static_cast<std::string>(": ") + info_.hardware_parameters[kEncTicksPerRevParam])
 					.c_str());
 
+  // 可选的 CAN 通道号参数（默认为 0，兼容旧配置）
+  auto it = info_.hardware_parameters.find(kCanChannelParam);
+  if (it != info_.hardware_parameters.end()) {
+    config_.can_channel = std::stoi(it->second);
+    RCLCPP_DEBUG(
+      logger_,
+      (kCanChannelParam + static_cast<std::string>(": ") + it->second).c_str());
+  } else {
+    config_.can_channel = 0;
+    RCLCPP_INFO(logger_, "Parameter '%s' not set, using default CAN channel %d", kCanChannelParam.c_str(), config_.can_channel);
+  }
+
 	for (const hardware_interface::ComponentInfo& joint : info.joints) {
 		// DiffDriveAndino has exactly two states and one command interface on each joint
 		if (joint.command_interfaces.size() != 1) {
@@ -59,6 +71,7 @@ hardware_interface::CallbackReturn DiffDriveAndino::on_configure(const rclcpp_li
   RCLCPP_INFO(logger_, "On configure...");
 
   // Set up communication with motor driver controller.
+  motor_driver_.SetCanChannel(config_.can_channel);
   motor_driver_.Setup(config_.serial_device, config_.baud_rate,3);
   motor_driver_.Setup(config_.serial_device, config_.baud_rate,5);
   RCLCPP_INFO(logger_, "Finished Configuration");

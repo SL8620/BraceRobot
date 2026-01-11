@@ -1,0 +1,32 @@
+# 高层状态到动作序列的配置
+# 单位：
+#   motor1/motor2: 度 (deg)，内部会转换为 rad 发送到 /motor/position_cmd
+#   lifter: 毫米 (mm)，发送到 /lifter_cmd
+#   delay: 秒 (s)，表示电机动作完成到电缸动作之间的等待时间
+
+states:
+  idle: 
+    - motor1: 0.0
+      motor2: 0.0
+      lifter: 0
+
+  lift:
+    - motor1: -18.0    # 张开胳膊
+      motor2: -18.0    
+      delay: 5.0      # 等待电机动作完成
+    - motor1: -10.0    # 收回胳膊（夹持状态）
+      motor2: -10.0
+      delay: 5.0      # 等待电机动作完成
+    - lifter: 30     # 提升电缸到最高位置
+      delay: 5.0      # 等待电缸动作完成
+
+  down:
+    - lifter: 0       # 降低电缸到最低位置
+      delay: 5.0      # 等待电缸动作完成
+    - motor1: -18.0    # 张开胳膊
+      motor2: -18.0    
+      delay: 5.0      # 等待电机动作完成
+    - motor1: 0.0     # 收回胳膊（空闲角度）
+      motor2: 0.0
+      delay: 5.0      # 等待电机动作完成
+

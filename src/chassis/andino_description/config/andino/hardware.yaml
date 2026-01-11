@@ -4,3 +4,4 @@ serial_device: /dev/ttyUSB_ARDUINO
 baud_rate: 57600
 timeout: 1000
 enc_ticks_per_rev: 585
+can_channel: 0
