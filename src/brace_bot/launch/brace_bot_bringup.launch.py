@@ -73,10 +73,10 @@ def generate_launch_description():
         # 1) 机器人模型与 robot_state_publisher（保留模型与 TF）
         desc_ld,
 
-        # 底盘控制节点暂时不启动（仅使用机械臂 CAN）
-        # control_node,
-        # joint_state_broadcaster_spawner,
-        # delay_diff_drive_controller_spawner_after_joint_state_broadcaster_spawner,
+        # 底盘控制节点（ros2_control + diff_drive）
+        control_node,
+        joint_state_broadcaster_spawner,
+        delay_diff_drive_controller_spawner_after_joint_state_broadcaster_spawner,
 
         # 电机控制节点（CAN）——使用 can0
         # 可执行名来自 kvaser_motor_control/CMakeLists.txt 中的 add_executable(motor_keyboard_node ...)

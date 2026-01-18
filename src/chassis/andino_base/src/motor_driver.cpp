@@ -54,6 +54,13 @@ void MotorDriver::SetCanChannel(int can_channel)
 	can_channel_ = can_channel;
 }
 
+void MotorDriver::SetMotorIds(int left_motor_id, int right_motor_id)
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+	left_motor_id_ = left_motor_id;
+	right_motor_id_ = right_motor_id;
+}
+
 void MotorDriver::Setup(const std::string& , int32_t /*baud_rate*/,int motor_id) 
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -104,7 +111,7 @@ void MotorDriver::SendEmptyMsg()
 	SendMsg("");
 }
 
-void MotorDriver::SetMotorValues(int val_left, int val_right) {
+void MotorDriver::SetMotorValues(double val_left, double val_right) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     if (!kvaser_ || !motors_ptr_) 
@@ -115,18 +122,18 @@ void MotorDriver::SetMotorValues(int val_left, int val_right) {
 
     for (int i = 0; i < num_nodes_; ++i) 
 	{
-        MOTOR* m = &motors_ptr_[i];
+		MOTOR* m = &motors_ptr_[i];
         if (!m->connect) continue;
 		// 左轮
-        if (m->id == 3) 
-		{  
-            kvaser_->SendSpeedCommand(m, static_cast<double>(val_left));
-        } 
+		if (m->id == left_motor_id_) 
+		{
+			kvaser_->SendSpeedCommand(m, val_left);
+		} 
 		// 右轮
-		else if (m->id == 5) 
-		{  
-            kvaser_->SendSpeedCommand(m, static_cast<double>(val_right));
-        }
+		else if (m->id == right_motor_id_) 
+		{
+			kvaser_->SendSpeedCommand(m, -val_right);
+		}
     }
 }
 
@@ -172,7 +179,7 @@ std::string MotorDriver::SendMsg(const std::string& msg)
 	} 
 	else if (cmd == "m") 
 	{
-		int v1 = 0, v2 = 0;
+		double v1 = 0.0, v2 = 0.0;
 		iss >> v1 >> v2;
 		SetMotorValues(v1, v2);
 		return std::string("OK");

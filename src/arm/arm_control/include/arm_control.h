@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/int32.hpp>
 
 #include <termios.h>
 #include <unistd.h>
@@ -9,6 +10,8 @@
 #include <vector>
 #include <memory>
 #include <cmath>
+
+#include <array>
 
 #include "kvaser.h"
 
@@ -29,13 +32,16 @@ public:
     ~MotorControlNode();
 
 private:
-    static constexpr int NumOfMotors = 2;
+    static constexpr int NumOfMotors = 6;
     std::vector<std::vector<double>> preset_positions_;
 
     /* 电机 / CAN */
     MOTOR motors_[NumOfMotors];
     std::shared_ptr<KvaserForGold> canBus_;
     int can_channel_{0};
+
+    // 逻辑零点偏移：用于“将当前角度设为 0”功能
+    std::array<double, NumOfMotors> zero_offsets_{};
 
     /* 控制状态 */
     ControlMode mode_ = ControlMode::IDLE;
@@ -46,10 +52,13 @@ private:
     double target_speed_ = 0.0;
     const double speed_step_ = 0.1;
 
-    std::vector<double> target_pos_{0.0};
+    std::vector<double> target_pos_;
 
     /* ROS */
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr pos_sub_;
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr enable_sub_;
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr set_zero_sub_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     /* 初始化 */
@@ -63,6 +72,8 @@ private:
 
     /* 回调 */
     void positionCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
+    void enableCallback(const std_msgs::msg::Int32::SharedPtr msg);
+    void setZeroCallback(const std_msgs::msg::Int32::SharedPtr msg);
 
     /* 主循环 */
     void controlLoop();
@@ -80,6 +91,7 @@ private:
     void stopAllMotors();
     void emergencyStop();
     void goHome();
+    void publishJointStates();
 };
 
 } // namespace kvaser_motor_control

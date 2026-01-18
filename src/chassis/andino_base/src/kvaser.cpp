@@ -307,12 +307,22 @@ double KvaserForElmo::GetPosition(MOTOR* m)
     do { canReceive(&messageR); } while (!((messageR.Byte[0] == 'P') && (messageR.Byte[1] == 'X') && ((messageR.Byte[3] & 0x40) == 0)));
     int data = byte2int(messageR.Byte + 4) - m->encoder.AbsZeroPos;
     double pos_rad = cnt2rad(data, m);
-        // 🔍 打印反馈
-    std::cout << "[Position] Motor ID: " << m->id
-              << " | Raw Cnt: " << data
-              << " | Position: " << pos_rad << " rad"
-              << std::endl;
-              return 0;
+
+        // 打印反馈信息，限制频率为约 5Hz，避免刷屏
+        using Clock = std::chrono::steady_clock;
+        static Clock::time_point last_log_time = Clock::now();
+        auto now = Clock::now();
+        auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_log_time).count();
+        if (dt_ms >= 200)  // 约 5Hz
+        {
+                last_log_time = now;
+                std::cout << "[Position] Motor ID: " << m->id
+                                    << " | Raw Cnt: " << data
+                                    << " | Position: " << pos_rad << " rad"
+                                    << std::endl;
+        }
+
+        return pos_rad;
 }
 /*获取真实速度*/
 double KvaserForElmo::GetVelocity(MOTOR* m)
@@ -324,11 +334,22 @@ double KvaserForElmo::GetVelocity(MOTOR* m)
     do { canReceive(&messageR); } while (!((messageR.Byte[0] == 'V') && (messageR.Byte[1] == 'X') && ((messageR.Byte[3] & 0x40) == 0)));
     int data = byte2int(messageR.Byte + 4);
     double vel_rad = cnt2rad(data, m);
-        std::cout << "[Velocity] Motor ID: " << m->id
-              << " | Raw Cnt/s: " << data
-              << " | Velocity: " << vel_rad << " rad/s"
-              << std::endl;
-            return 0;
+
+        // 打印反馈信息，限制频率为约 5Hz
+        using Clock = std::chrono::steady_clock;
+        static Clock::time_point last_log_time_v = Clock::now();
+        auto now = Clock::now();
+        auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_log_time_v).count();
+        if (dt_ms >= 200)  // 约 5Hz
+        {
+                last_log_time_v = now;
+                std::cout << "[Velocity] Motor ID: " << m->id
+                                    << " | Raw Cnt/s: " << data
+                                    << " | Velocity: " << vel_rad << " rad/s"
+                                    << std::endl;
+        }
+
+        return vel_rad;
 }
 /*停止运行*/
 int KvaserForElmo::stop(MOTOR* m)

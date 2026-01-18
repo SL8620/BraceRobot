@@ -69,9 +69,9 @@ class MotorDriver {
   Encoders ReadEncoderValues();
 
   /// @brief 设置两个电机的速度。
-  /// @param val_1 左电机速度（单位：rad/s 或 counts/s）
-  /// @param val_2 右电机速度（单位：rad/s 或 counts/s）
-  void SetMotorValues(int val_1, int val_2);
+  /// @param val_1 左电机速度（单位：rad/s）
+  /// @param val_2 右电机速度（单位：rad/s）
+  void SetMotorValues(double val_1, double val_2);
 
   /// @brief 设置 PID 参数。
   /// @param k_p 比例增益
@@ -92,6 +92,11 @@ class MotorDriver {
   /// @param can_channel Kvaser CAN 通道号（如 0、1 等）。
   void SetCanChannel(int can_channel);
 
+  /// @brief 设置左右电机的 CAN 节点 ID（node ID）。
+  /// @param left_motor_id 左电机的 node ID。
+  /// @param right_motor_id 右电机的 node ID。
+  void SetMotorIds(int left_motor_id, int right_motor_id);
+
  private:
   mutable std::mutex mutex_;  ///< 线程安全锁
   std::vector<MOTOR> motors_vec_;  // 存储电机对象，替代原来的局部数组
@@ -109,6 +114,10 @@ class MotorDriver {
   std::vector<MOTOR> motors_;  // 用于存放 MOTOR 对象
   // 超时
   int32_t timeout_ms_{200};
+
+  // 左右电机在 CAN 总线上的节点 ID，默认与现有硬编码保持一致（3 和 5）。
+  int left_motor_id_{3};
+  int right_motor_id_{5};
 };
 
 }  // namespace andino_base

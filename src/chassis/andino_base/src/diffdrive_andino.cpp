@@ -44,6 +44,35 @@ hardware_interface::CallbackReturn DiffDriveAndino::on_init(const hardware_inter
     RCLCPP_INFO(logger_, "Parameter '%s' not set, using default CAN channel %d", kCanChannelParam.c_str(), config_.can_channel);
   }
 
+  // 左右电机 node ID（可选参数，默认 3/5，与现有实现一致）
+  auto it_left_id = info_.hardware_parameters.find(kLeftMotorIdParam);
+  if (it_left_id != info_.hardware_parameters.end())
+  {
+    config_.left_motor_id = std::stoi(it_left_id->second);
+    RCLCPP_DEBUG(
+      logger_,
+      (kLeftMotorIdParam + static_cast<std::string>(": ") + it_left_id->second).c_str());
+  }
+  else
+  {
+    config_.left_motor_id = 7;
+    RCLCPP_INFO(logger_, "Parameter '%s' not set, using default left motor id %d", kLeftMotorIdParam.c_str(), config_.left_motor_id);
+  }
+
+  auto it_right_id = info_.hardware_parameters.find(kRightMotorIdParam);
+  if (it_right_id != info_.hardware_parameters.end())
+  {
+    config_.right_motor_id = std::stoi(it_right_id->second);
+    RCLCPP_DEBUG(
+      logger_,
+      (kRightMotorIdParam + static_cast<std::string>(": ") + it_right_id->second).c_str());
+  }
+  else
+  {
+    config_.right_motor_id = 8;
+    RCLCPP_INFO(logger_, "Parameter '%s' not set, using default right motor id %d", kRightMotorIdParam.c_str(), config_.right_motor_id);
+  }
+
 	for (const hardware_interface::ComponentInfo& joint : info.joints) {
 		// DiffDriveAndino has exactly two states and one command interface on each joint
 		if (joint.command_interfaces.size() != 1) {
@@ -72,8 +101,9 @@ hardware_interface::CallbackReturn DiffDriveAndino::on_configure(const rclcpp_li
 
   // Set up communication with motor driver controller.
   motor_driver_.SetCanChannel(config_.can_channel);
-  motor_driver_.Setup(config_.serial_device, config_.baud_rate,3);
-  motor_driver_.Setup(config_.serial_device, config_.baud_rate,5);
+  motor_driver_.Setup(config_.serial_device, config_.baud_rate, config_.left_motor_id);
+  motor_driver_.Setup(config_.serial_device, config_.baud_rate, config_.right_motor_id);
+  motor_driver_.SetMotorIds(config_.left_motor_id, config_.right_motor_id);
   RCLCPP_INFO(logger_, "Finished Configuration");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -125,11 +155,11 @@ hardware_interface::CallbackReturn DiffDriveAndino::on_deactivate(const rclcpp_l
 }
 
 hardware_interface::return_type DiffDriveAndino::read(const rclcpp::Time& /* time */, const rclcpp::Duration& /* period */) {
-  left_wheel_.pos_= motor_driver_.get_position(3);   // 0x6064
-  left_wheel_.vel_ = motor_driver_.get_velocity(3);   // 0x606C
+  left_wheel_.pos_= motor_driver_.get_position(config_.left_motor_id);   // 0x6064
+  left_wheel_.vel_ = motor_driver_.get_velocity(config_.left_motor_id);   // 0x606C
 
-  right_wheel_.pos_ = motor_driver_.get_position(5);
-  right_wheel_.vel_ = motor_driver_.get_velocity(5);
+  right_wheel_.pos_ = motor_driver_.get_position(config_.right_motor_id);
+  right_wheel_.vel_ = motor_driver_.get_velocity(config_.right_motor_id);
 
   return hardware_interface::return_type::OK;
 }
@@ -141,13 +171,12 @@ hardware_interface::return_type DiffDriveAndino::write(const rclcpp::Time& /* ti
     return hardware_interface::return_type::ERROR;
   }
 
-  // The command is in rad/sec (rps), we need to convert it to ticks/sec (tps)
-  // Using the rads per tick(rpt) of the motor information
-  // Formula: ticks/sec = rads/sec / rads/tick
+  // The command from the controller is in rad/sec. We forward it as-is
+  // to the motor driver so that small angular velocities are preserved.
 
-  const int left_value_target = static_cast<int>(left_wheel_.cmd_ );// left_wheel_.rads_per_tick_);
-  const int right_value_target = static_cast<int>(right_wheel_.cmd_ );// right_wheel_.rads_per_tick_);
-  RCLCPP_INFO(logger_, "Target speed - Left: %d, Right: %d", left_value_target, right_value_target);
+  const double left_value_target = left_wheel_.cmd_;
+  const double right_value_target = right_wheel_.cmd_;
+  RCLCPP_INFO(logger_, "Target speed - Left: %.3f, Right: %.3f", left_value_target, right_value_target);
   motor_driver_.SetMotorValues(left_value_target, right_value_target);
 
   return hardware_interface::return_type::OK;

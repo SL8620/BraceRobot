@@ -5,28 +5,43 @@
 #   delay: 秒 (s)，表示电机动作完成到电缸动作之间的等待时间
 
 states:
-  idle: 
+  idle:
     - motor1: 0.0
       motor2: 0.0
-      lifter: 0
-
-  lift:
-    - motor1: -18.0    # 张开胳膊
-      motor2: -18.0    
-      delay: 5.0      # 等待电机动作完成
-    - motor1: -10.0    # 收回胳膊（夹持状态）
+      motor3: 0.0
+      motor4: 0.0
+      motor5: 0.0
+      motor6: 0.0
+      lifter: 60      # 电缸中间高度
+      delay: 0.0
+      
+  low:
+    # Step 2: 再动电机
+    - motor1: -10.0
       motor2: -10.0
-      delay: 5.0      # 等待电机动作完成
-    - lifter: 30     # 提升电缸到最高位置
-      delay: 5.0      # 等待电缸动作完成
+      motor3: 0.0
+      motor4: 0.0
+      motor5: -10.0
+      motor6: 10.0
+      lifter: 5
+      delay: 3.0
 
-  down:
-    - lifter: 0       # 降低电缸到最低位置
-      delay: 5.0      # 等待电缸动作完成
-    - motor1: -18.0    # 张开胳膊
-      motor2: -18.0    
-      delay: 5.0      # 等待电机动作完成
-    - motor1: 0.0     # 收回胳膊（空闲角度）
-      motor2: 0.0
-      delay: 5.0      # 等待电机动作完成
+  pick:
+    - motor1: -5.0
+      motor2: -5.0
+      motor3: 10.0
+      motor4: 10.0
+      motor5: 15.0
+      motor6: -15.0
+      lifter: 25
+      delay: 3.0
 
+  high:
+    - motor1: -5.0
+      motor2: -5.0
+      motor3: 20.0
+      motor4: 20.0
+      motor5: 15.0
+      motor6: -15.0
+      lifter: 80
+      delay: 0.0

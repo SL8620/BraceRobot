@@ -20,8 +20,9 @@ namespace brace_bot
 enum class HighLevelState
 {
   IDLE = 0,
-  LIFT = 1,
-  DOWN = 2,
+  LOW = 1,
+  PICK = 2,
+  HIGH = 3,
 };
 
 struct ActionStep
@@ -33,11 +34,15 @@ struct ActionStep
   // 电机目标位置（角度，单位：deg）
   double motor1_deg = 0.0;
   double motor2_deg = 0.0;
+  double motor3_deg = 0.0;
+  double motor4_deg = 0.0;
+  double motor5_deg = 0.0;
+  double motor6_deg = 0.0;
 
   // 电缸目标位置（mm）
   double lifter_mm = 0.0;
 
-  // 电机动作与电缸动作之间的延时（秒）
+  // 本 step 执行动作后，进入下一 step 之前的等待时间（秒）
   double delay_s = 0.0;
 };
 
@@ -45,9 +50,8 @@ struct ExecutionContext
 {
   bool active = false;
   std::size_t step_index = 0;
-  bool motor_sent = false;
-  bool lifter_sent = false;
-  rclcpp::Time motor_send_time;
+  bool step_actions_sent = false;
+  rclcpp::Time step_start_time;
 };
 
 class BraceStateNode : public rclcpp::Node
@@ -119,9 +123,11 @@ private:
 
     YAML::Node states_node = root["states"];
 
+    // 四个高层状态：idle / low / pick / high
     loadStateSequence(states_node, "idle", HighLevelState::IDLE);
-    loadStateSequence(states_node, "lift", HighLevelState::LIFT);
-    loadStateSequence(states_node, "down", HighLevelState::DOWN);
+    loadStateSequence(states_node, "low", HighLevelState::LOW);
+    loadStateSequence(states_node, "pick", HighLevelState::PICK);
+    loadStateSequence(states_node, "high", HighLevelState::HIGH);
 
     return true;
   }
@@ -161,6 +167,26 @@ private:
         step.has_motor = true;
         step.motor2_deg = step_node["motor2"].as<double>();
       }
+      if (step_node["motor3"])
+      {
+        step.has_motor = true;
+        step.motor3_deg = step_node["motor3"].as<double>();
+      }
+      if (step_node["motor4"])
+      {
+        step.has_motor = true;
+        step.motor4_deg = step_node["motor4"].as<double>();
+      }
+      if (step_node["motor5"])
+      {
+        step.has_motor = true;
+        step.motor5_deg = step_node["motor5"].as<double>();
+      }
+      if (step_node["motor6"])
+      {
+        step.has_motor = true;
+        step.motor6_deg = step_node["motor6"].as<double>();
+      }
       if (step_node["lifter"])
       {
         step.has_lifter = true;
@@ -186,10 +212,11 @@ private:
     switch (msg->data)
     {
       case 0: new_state = HighLevelState::IDLE; break;
-      case 1: new_state = HighLevelState::LIFT; break;
-      case 2: new_state = HighLevelState::DOWN; break;
+      case 1: new_state = HighLevelState::LOW; break;
+      case 2: new_state = HighLevelState::PICK; break;
+      case 3: new_state = HighLevelState::HIGH; break;
       default:
-        RCLCPP_WARN(get_logger(), "Unknown state cmd: %d (0=IDLE,1=LIFT,2=DOWN)", msg->data);
+        RCLCPP_WARN(get_logger(), "Unknown state cmd: %d (0=IDLE,1=LOW,2=PICK,3=HIGH)", msg->data);
         return;
     }
 
@@ -217,8 +244,7 @@ private:
 
     exec_ctx_.active = true;
     exec_ctx_.step_index = 0;
-    exec_ctx_.motor_sent = false;
-    exec_ctx_.lifter_sent = false;
+    exec_ctx_.step_actions_sent = false;
 
     RCLCPP_INFO(get_logger(), "Start state %d with %zu steps",
                 static_cast<int>(state), it->second.size());
@@ -243,55 +269,55 @@ private:
     auto &seq = it->second;
     auto &step = seq[exec_ctx_.step_index];
     auto now = this->get_clock()->now();
-
-    // 1. 先发送电机目标位置（若配置）
-    if (!exec_ctx_.motor_sent)
+    // 1. 若本 step 的动作尚未发送，则立即发送（电机和电缸在本 step 内同时触发）
+    if (!exec_ctx_.step_actions_sent)
     {
       if (step.has_motor)
       {
-        publishMotorTargets(step.motor1_deg, step.motor2_deg);
-        exec_ctx_.motor_sent = true;
-        exec_ctx_.motor_send_time = now;
+        publishMotorTargets(
+          step.motor1_deg,
+          step.motor2_deg,
+          step.motor3_deg,
+          step.motor4_deg,
+          step.motor5_deg,
+          step.motor6_deg);
       }
-      else
-      {
-        // 没有电机动作则直接视为已发送
-        exec_ctx_.motor_sent = true;
-        exec_ctx_.motor_send_time = now;
-      }
-    }
 
-    // 2. 在 delay 之后发送电缸目标（若配置）
-    if (!exec_ctx_.lifter_sent)
-    {
-      const double elapsed = (now - exec_ctx_.motor_send_time).seconds();
-      if (!step.has_lifter)
-      {
-        exec_ctx_.lifter_sent = true;
-      }
-      else if (elapsed >= step.delay_s)
+      if (step.has_lifter)
       {
         publishLifterTarget(step.lifter_mm);
-        exec_ctx_.lifter_sent = true;
       }
+
+      exec_ctx_.step_actions_sent = true;
+      exec_ctx_.step_start_time = now;
+      return;
     }
 
-    // 3. 当前 step 完成，则进入下一个 step
-    if (exec_ctx_.motor_sent && exec_ctx_.lifter_sent)
+    // 2. 动作已发送，等待 delay_s 之后进入下一个 step
+    const double elapsed = (now - exec_ctx_.step_start_time).seconds();
+    if (elapsed >= step.delay_s)
     {
       exec_ctx_.step_index++;
-      exec_ctx_.motor_sent = false;
-      exec_ctx_.lifter_sent = false;
+      exec_ctx_.step_actions_sent = false;
     }
   }
 
-  void publishMotorTargets(double motor1_deg, double motor2_deg)
+  void publishMotorTargets(double motor1_deg,
+                           double motor2_deg,
+                           double motor3_deg,
+                           double motor4_deg,
+                           double motor5_deg,
+                           double motor6_deg)
   {
     const double rad_per_deg = M_PI / 180.0;
     sensor_msgs::msg::JointState js;
-    js.position.resize(2);
+    js.position.resize(6);
     js.position[0] = motor1_deg * rad_per_deg;
     js.position[1] = motor2_deg * rad_per_deg;
+    js.position[2] = motor3_deg * rad_per_deg;
+    js.position[3] = motor4_deg * rad_per_deg;
+    js.position[4] = motor5_deg * rad_per_deg;
+    js.position[5] = motor6_deg * rad_per_deg;
     motor_pub_->publish(js);
   }
 

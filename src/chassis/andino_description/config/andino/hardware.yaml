@@ -5,3 +5,5 @@ baud_rate: 57600
 timeout: 1000
 enc_ticks_per_rev: 585
 can_channel: 0
+left_motor_id: 7      # 左电机的 CAN node ID
+right_motor_id: 8     # 右电机的 CAN node ID

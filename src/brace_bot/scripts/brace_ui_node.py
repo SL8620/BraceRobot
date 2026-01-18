@@ -29,8 +29,18 @@ class BraceUINode(Node):
             Float32, '/lifter_pos', self._lifter_pos_callback, 10
         )
 
-        # 电机
+        # 电机：控制 + 状态订阅（用于 UI 显示）
         self.motor_cmd_pub = self.create_publisher(JointState, '/motor/position_cmd', 10)
+        # 订阅机械臂节点发布的实时关节状态（实际位置），而不是只看指令值
+        self.motor_state_sub = self.create_subscription(
+            JointState, '/motor/joint_states', self._motor_state_callback, 10
+        )
+        # 电机全局使能/失能命令
+        self.motor_enable_pub = self.create_publisher(Int32, '/motor/enable_cmd', 10)
+        # 单个电机零点设置：/motor/set_zero, data=1-6
+        self.motor_zero_pub = self.create_publisher(Int32, '/motor/set_zero', 10)
+        # 6 个电机当前目标角度（deg），用于 UI 显示
+        self._motor_current_deg = [0.0] * 6
 
         # 底盘：发布 cmd_vel 到 andino 控制
         from geometry_msgs.msg import Twist
@@ -65,6 +75,33 @@ class BraceUINode(Node):
                         pass
             if self.root:
                 self.root.after(0, update)
+
+    def _motor_state_callback(self, msg: JointState):
+        """接收 /motor/position_cmd，更新 6 个电机在 UI 中显示的角度（deg）。"""
+        if not msg.position:
+            return
+
+        rad2deg = 180.0 / math.pi
+        n = min(len(msg.position), 6)
+        for i in range(n):
+            try:
+                self._motor_current_deg[i] = msg.position[i] * rad2deg
+            except (TypeError, IndexError):
+                continue
+
+        # 在 Tk 线程中更新文本
+        if hasattr(self, 'root') and self.root and hasattr(self, 'motor_deg_vars'):
+            def update():
+                for i in range(6):
+                    try:
+                        self.motor_deg_vars[i].set(f"{self._motor_current_deg[i]:.1f}")
+                    except tk.TclError:
+                        pass
+
+            try:
+                self.root.after(0, update)
+            except tk.TclError:
+                pass
 
     # ----------------- UI 初始化 -----------------
     def _init_ui(self):
@@ -141,28 +178,110 @@ class BraceUINode(Node):
 
     # ----------------- 电机 UI -----------------
     def _build_motor_ui(self, frame):
-        ttk.Label(frame, text='Motor1 (deg):').grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        self.motor1_deg_var = tk.StringVar(value='0.0')
-        ttk.Entry(frame, textvariable=self.motor1_deg_var, width=8).grid(row=0, column=1, sticky='w')
+        # 右臂：电机 1,3,5 ； 左臂：电机 2,4,6
+        ttk.Label(frame, text='电机编号 1-6（右臂: 1,3,5；左臂: 2,4,6）').grid(
+            row=0, column=0, columnspan=4, sticky='w', padx=5, pady=5
+        )
 
-        ttk.Label(frame, text='Motor2 (deg):').grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        self.motor2_deg_var = tk.StringVar(value='0.0')
-        ttk.Entry(frame, textvariable=self.motor2_deg_var, width=8).grid(row=1, column=1, sticky='w')
+        self.motor_deg_vars = [tk.StringVar(value='0.0') for _ in range(6)]
+        self.motor_target_deg_vars = [tk.StringVar(value='0.0') for _ in range(6)]
 
-        ttk.Button(frame, text='Execute', command=self._on_motors_execute).grid(row=2, column=0, columnspan=2, padx=5, pady=10)
+        for i in range(6):
+            motor_id = i + 1
+            side = '右臂' if motor_id in (1, 3, 5) else '左臂'
+
+            row = i + 1
+            ttk.Label(frame, text=f'M{motor_id} ({side}) 当前(deg):').grid(
+                row=row, column=0, sticky='w', padx=5, pady=2
+            )
+            ttk.Label(frame, textvariable=self.motor_deg_vars[i], width=8).grid(
+                row=row, column=1, sticky='w', padx=5, pady=2
+            )
+
+            ttk.Label(frame, text='目标(deg):').grid(
+                row=row, column=2, sticky='e', padx=5, pady=2
+            )
+            ttk.Entry(frame, textvariable=self.motor_target_deg_vars[i], width=8).grid(
+                row=row, column=3, sticky='w', padx=5, pady=2
+            )
+
+        ttk.Button(frame, text='执行所有电机', command=self._on_motors_execute).grid(
+            row=7, column=0, columnspan=2, padx=5, pady=10
+        )
+
+        # 使能 / 失能 按钮
+        ttk.Button(frame, text='使能全部电机', command=self._on_motors_enable).grid(
+            row=7, column=2, padx=5, pady=10
+        )
+        ttk.Button(frame, text='失能全部电机', command=self._on_motors_disable).grid(
+            row=7, column=3, padx=5, pady=10
+        )
+
+        # 只为 M6 提供一个“将当前角度设为 0”按钮，避免误操作其他关节
+        ttk.Button(frame, text='将 M6 当前设为 0°', command=self._on_motor6_zero).grid(
+            row=8, column=0, columnspan=4, padx=5, pady=5, sticky='we'
+        )
 
     def _on_motors_execute(self):
-        try:
-            m1 = float(self.motor1_deg_var.get())
-            m2 = float(self.motor2_deg_var.get())
-        except ValueError:
-            self.get_logger().warn('Invalid motor target degrees')
-            return
+        # 读取 6 个电机的目标角度（deg），并按照电机编号施加限位：
+        # 1,2: [-15, 0]；3,4: [0, 20]；5,6: [-20, 20]
+        limits = [(-15.0, 0.0), (-15.0, 0.0), (0.0, 20.0), (0.0, 20.0), (-20.0, 20.0), (-20.0, 20.0)]
+
+        targets_deg = []
+        clamped = False
+        for i in range(6):
+            txt = self.motor_target_deg_vars[i].get()
+            try:
+                val = float(txt)
+            except ValueError:
+                self.get_logger().warn(f'Invalid target for motor {i+1}: "{txt}"')
+                return
+
+            low, high = limits[i]
+            if val < low:
+                val = low
+                clamped = True
+            elif val > high:
+                val = high
+                clamped = True
+
+            # 更新输入框为限幅后的值
+            self.motor_target_deg_vars[i].set(f"{val:.1f}")
+            targets_deg.append(val)
+
+        if clamped:
+            self.get_logger().info('Some motor targets were clamped to their limits.')
+
+        # 对电机 5 和 6 中的一个改符号：这里将电机 6 的期望角度取反，
+        # 这样在 UI 中输入同号时，5/6 实际运动方向相反。
+        # 索引 4 对应电机 5，索引 5 对应电机 6。
+        if len(targets_deg) >= 6:
+            targets_deg[5] = -targets_deg[5]
+
         rad = math.pi / 180.0
         js = JointState()
-        js.position = [m1 * rad, m2 * rad]
+        js.position = [d * rad for d in targets_deg]
         self.motor_cmd_pub.publish(js)
-        self.get_logger().info(f'Motor command: [{m1}, {m2}] deg')
+        self.get_logger().info('Motor command (deg): ' + ', '.join(f'{d:.1f}' for d in targets_deg))
+
+    def _on_motors_enable(self):
+        msg = Int32()
+        msg.data = 1
+        self.motor_enable_pub.publish(msg)
+        self.get_logger().info('Enable all motors command sent')
+
+    def _on_motors_disable(self):
+        msg = Int32()
+        msg.data = 0
+        self.motor_enable_pub.publish(msg)
+        self.get_logger().info('Disable all motors command sent')
+
+    def _on_motor6_zero(self):
+        """将当前物理位置作为 M6 的逻辑 0°。"""
+        msg = Int32()
+        msg.data = 6  # 电机 6
+        self.motor_zero_pub.publish(msg)
+        self.get_logger().info('Set current position of motor 6 as zero (via /motor/set_zero)')
 
     # ----------------- 底盘 UI -----------------
     def _build_base_ui(self, frame):
@@ -188,26 +307,38 @@ class BraceUINode(Node):
         self.state_var = tk.StringVar(value='IDLE')
         ttk.Label(frame, textvariable=self.state_var, width=10).grid(row=0, column=1, sticky='w')
 
-        # 这里简单使用按钮按照 idle -> lift -> down -> idle 的顺序切换
+        # 四个高层状态：idle -> low -> pick -> high -> pick -> low -> idle
         ttk.Button(frame, text='To IDLE', command=lambda: self._set_state(0)).grid(row=1, column=0, padx=5, pady=5)
-        ttk.Button(frame, text='To LIFT', command=lambda: self._set_state(1)).grid(row=1, column=1, padx=5, pady=5)
-        ttk.Button(frame, text='To DOWN', command=lambda: self._set_state(2)).grid(row=1, column=2, padx=5, pady=5)
+        ttk.Button(frame, text='To LOW', command=lambda: self._set_state(1)).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(frame, text='To PICK', command=lambda: self._set_state(2)).grid(row=1, column=2, padx=5, pady=5)
+        ttk.Button(frame, text='To HIGH', command=lambda: self._set_state(3)).grid(row=1, column=3, padx=5, pady=5)
 
         # 简单的本地记录当前状态，约束切换逻辑
-        self._state_int = 0  # 0=idle,1=lift,2=down
+        # 0=idle,1=low,2=pick,3=high
+        self._state_int = 0
 
     def _set_state(self, target: int):
-        # 约束仅允许 idle->lift->down->idle 循环
-        if self._state_int == 0 and target == 1:
-            pass
-        elif self._state_int == 1 and target == 2:
-            pass
-        elif self._state_int == 2 and target == 0:
-            pass
-        elif target == self._state_int:
-            pass
-        else:
-            self.get_logger().warn('Invalid transition, must follow IDLE->LIFT->DOWN->IDLE')
+        # 约束仅允许按照 idle->low->pick->high->pick->low->idle 的路径切换
+        cur = self._state_int
+        valid = False
+
+        if cur == target:
+            valid = True
+        elif cur == 0 and target == 1:  # idle -> low
+            valid = True
+        elif cur == 1 and target == 2:  # low -> pick
+            valid = True
+        elif cur == 2 and target == 3:  # pick -> high
+            valid = True
+        elif cur == 3 and target == 2:  # high -> pick
+            valid = True
+        elif cur == 2 and target == 1:  # pick -> low
+            valid = True
+        elif cur == 1 and target == 0:  # low -> idle
+            valid = True
+
+        if not valid:
+            self.get_logger().warn('Invalid transition, must follow IDLE->LOW->PICK->HIGH->PICK->LOW->IDLE')
             return
 
         msg = Int32()
@@ -215,7 +346,7 @@ class BraceUINode(Node):
         self.state_cmd_pub.publish(msg)
 
         self._state_int = target
-        names = {0: 'IDLE', 1: 'LIFT', 2: 'DOWN'}
+        names = {0: 'IDLE', 1: 'LOW', 2: 'PICK', 3: 'HIGH'}
         self.state_var.set(names.get(target, '?'))
         self.get_logger().info(f'State command: {self.state_var.get()}')
 
