@@ -1,7 +1,9 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import IncludeLaunchDescription, RegisterEventHandler, DeclareLaunchArgument
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.conditions import UnlessCondition
+from launch.substitutions import LaunchConfiguration
 
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -13,6 +15,13 @@ import xacro
 
 
 def generate_launch_description():
+    ui_only = LaunchConfiguration('ui_only')
+
+    ui_only_arg = DeclareLaunchArgument(
+        'ui_only',
+        default_value='false',
+        description='If true, only launch UI without hardware/action nodes.',
+    )
     andino_desc_launch = os.path.join(
         get_package_share_directory('andino_description'),
         'launch',
@@ -48,18 +57,21 @@ def generate_launch_description():
             ('/diff_controller/odom', '/odom'),
         ],
         output="both",
+        condition=UnlessCondition(ui_only),
     )
 
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
+        condition=UnlessCondition(ui_only),
     )
 
     diff_drive_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["diff_controller", "--controller-manager", "/controller_manager"],
+        condition=UnlessCondition(ui_only),
     )
 
     delay_diff_drive_controller_spawner_after_joint_state_broadcaster_spawner = RegisterEventHandler(
@@ -70,6 +82,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        # 启动参数：是否只开 UI
+        ui_only_arg,
+
         # 1) 机器人模型与 robot_state_publisher（保留模型与 TF）
         desc_ld,
 
@@ -85,21 +100,24 @@ def generate_launch_description():
             executable='motor_keyboard_node',
             name='motor_control_node',
             output='screen',
-            parameters=[{'can_channel': 0}]
+            parameters=[{'can_channel': 0}],
+            condition=UnlessCondition(ui_only),
         ),
         # 电缸 Modbus 节点
         Node(
             package='lifter_modbus',
             executable='lifter_node',
             name='lifter_node',
-            output='screen'
+            output='screen',
+            condition=UnlessCondition(ui_only),
         ),
         # 集成状态机节点
         Node(
             package='brace_bot',
             executable='brace_state_node',
             name='brace_state_node',
-            output='screen'
+            output='screen',
+            condition=UnlessCondition(ui_only),
         ),
         # Python UI 总控台
         Node(
