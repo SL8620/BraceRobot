@@ -389,6 +389,187 @@ KvaserForGold::KvaserForGold(int channel_number, int NumOfNodes, MOTOR* pNode, c
 {
 }
 
+bool KvaserForGold::SDOWriteU16(MOTOR* m, uint16_t index, uint8_t subindex, uint16_t value, int timeout_ms)
+{
+    if (!m) return false;
+
+    CANMessage tx = { 0x600 | (uint8_t)m->id, 8,{0} };
+    tx.Byte[0] = 0x2B; // expedited download, 2 bytes
+    tx.Byte[1] = static_cast<uint8_t>(index & 0xFF);
+    tx.Byte[2] = static_cast<uint8_t>((index >> 8) & 0xFF);
+    tx.Byte[3] = subindex;
+    tx.Byte[4] = static_cast<uint8_t>(value & 0xFF);
+    tx.Byte[5] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    tx.Byte[6] = 0x00;
+    tx.Byte[7] = 0x00;
+
+    CANMessage rx = { 0x580 | (uint8_t)m->id, 8,{0} };
+
+    canFlushReceiveQueue(handle);
+    if (canSend(&tx) == EXIT_FAILURE)
+        return false;
+
+    auto start = std::chrono::steady_clock::now();
+    while (true)
+    {
+        if (canReceive(&rx) == EXIT_SUCCESS)
+        {
+            // success response: 0x60 idxLo idxHi sub
+            if (rx.Byte[0] == 0x60 && rx.Byte[1] == tx.Byte[1] && rx.Byte[2] == tx.Byte[2] && rx.Byte[3] == subindex)
+                return true;
+
+            // abort
+            if ((rx.Byte[0] & 0x80) != 0)
+                return false;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count() > timeout_ms)
+            return false;
+
+        usleep(1000);
+    }
+}
+
+bool KvaserForGold::SDOReadI16(MOTOR* m, uint16_t index, uint8_t subindex, int16_t &out, int timeout_ms)
+{
+    out = 0;
+    if (!m) return false;
+
+    CANMessage tx = { 0x600 | (uint8_t)m->id, 8,{0} };
+    tx.Byte[0] = 0x40; // expedited upload request
+    tx.Byte[1] = static_cast<uint8_t>(index & 0xFF);
+    tx.Byte[2] = static_cast<uint8_t>((index >> 8) & 0xFF);
+    tx.Byte[3] = subindex;
+    tx.Byte[4] = 0x00;
+    tx.Byte[5] = 0x00;
+    tx.Byte[6] = 0x00;
+    tx.Byte[7] = 0x00;
+
+    CANMessage rx = { 0x580 | (uint8_t)m->id, 8,{0} };
+
+    canFlushReceiveQueue(handle);
+    if (canSend(&tx) == EXIT_FAILURE)
+        return false;
+
+    auto start = std::chrono::steady_clock::now();
+    while (true)
+    {
+        if (canReceive(&rx) == EXIT_SUCCESS)
+        {
+            // abort
+            if ((rx.Byte[0] & 0x80) != 0)
+                return false;
+
+            // expected upload response: 0x4B for 2 bytes, expedited
+            if ((rx.Byte[0] == 0x4B || rx.Byte[0] == 0x4F || rx.Byte[0] == 0x43) &&
+                rx.Byte[1] == tx.Byte[1] && rx.Byte[2] == tx.Byte[2] && rx.Byte[3] == subindex)
+            {
+                uint16_t raw = static_cast<uint16_t>(rx.Byte[4]) | (static_cast<uint16_t>(rx.Byte[5]) << 8);
+                out = static_cast<int16_t>(raw);
+                return true;
+            }
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count() > timeout_ms)
+            return false;
+
+        usleep(1000);
+    }
+}
+
+bool KvaserForGold::SDOWriteI32(MOTOR* m, uint16_t index, uint8_t subindex, int32_t value, int timeout_ms)
+{
+    if (!m) return false;
+
+    CANMessage tx = { 0x600 | (uint8_t)m->id, 8,{0} };
+    tx.Byte[0] = 0x23; // expedited download, 4 bytes
+    tx.Byte[1] = static_cast<uint8_t>(index & 0xFF);
+    tx.Byte[2] = static_cast<uint8_t>((index >> 8) & 0xFF);
+    tx.Byte[3] = subindex;
+    tx.Byte[4] = static_cast<uint8_t>(value & 0xFF);
+    tx.Byte[5] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    tx.Byte[6] = static_cast<uint8_t>((value >> 16) & 0xFF);
+    tx.Byte[7] = static_cast<uint8_t>((value >> 24) & 0xFF);
+
+    CANMessage rx = { 0x580 | (uint8_t)m->id, 8,{0} };
+
+    canFlushReceiveQueue(handle);
+    if (canSend(&tx) == EXIT_FAILURE)
+        return false;
+
+    auto start = std::chrono::steady_clock::now();
+    while (true)
+    {
+        if (canReceive(&rx) == EXIT_SUCCESS)
+        {
+            if (rx.Byte[0] == 0x60 && rx.Byte[1] == tx.Byte[1] && rx.Byte[2] == tx.Byte[2] && rx.Byte[3] == subindex)
+                return true;
+
+            if ((rx.Byte[0] & 0x80) != 0)
+                return false;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count() > timeout_ms)
+            return false;
+
+        usleep(1000);
+    }
+}
+
+bool KvaserForGold::SDOReadI32(MOTOR* m, uint16_t index, uint8_t subindex, int32_t &out, int timeout_ms)
+{
+    out = 0;
+    if (!m) return false;
+
+    CANMessage tx = { 0x600 | (uint8_t)m->id, 8,{0} };
+    tx.Byte[0] = 0x40; // expedited upload request
+    tx.Byte[1] = static_cast<uint8_t>(index & 0xFF);
+    tx.Byte[2] = static_cast<uint8_t>((index >> 8) & 0xFF);
+    tx.Byte[3] = subindex;
+    tx.Byte[4] = 0x00;
+    tx.Byte[5] = 0x00;
+    tx.Byte[6] = 0x00;
+    tx.Byte[7] = 0x00;
+
+    CANMessage rx = { 0x580 | (uint8_t)m->id, 8,{0} };
+
+    canFlushReceiveQueue(handle);
+    if (canSend(&tx) == EXIT_FAILURE)
+        return false;
+
+    auto start = std::chrono::steady_clock::now();
+    while (true)
+    {
+        if (canReceive(&rx) == EXIT_SUCCESS)
+        {
+            if ((rx.Byte[0] & 0x80) != 0)
+                return false;
+
+            // expected upload response for 4 bytes, expedited
+            if ((rx.Byte[0] == 0x43 || rx.Byte[0] == 0x4B || rx.Byte[0] == 0x4F) &&
+                rx.Byte[1] == tx.Byte[1] && rx.Byte[2] == tx.Byte[2] && rx.Byte[3] == subindex)
+            {
+                uint32_t raw =
+                    (static_cast<uint32_t>(rx.Byte[4])      ) |
+                    (static_cast<uint32_t>(rx.Byte[5]) <<  8) |
+                    (static_cast<uint32_t>(rx.Byte[6]) << 16) |
+                    (static_cast<uint32_t>(rx.Byte[7]) << 24);
+                out = static_cast<int32_t>(raw);
+                return true;
+            }
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count() > timeout_ms)
+            return false;
+
+        usleep(1000);
+    }
+}
+
 /*配置驱动器RPDO*/
 int KvaserForGold::RPDOconfig(MOTOR* m, Mode mode)
 {

@@ -1,0 +1,19 @@
+motor5_pt_impedance_node:
+  ros__parameters:
+    can_channel: 0
+    motor_id: 5
+    control_period_ms: 20.0
+
+    # Impedance gains (tune here; no rebuild needed)
+    kp: 0.0
+    kd: 0.0
+
+    # Safety / behavior
+    hold_current_on_start: true
+    max_torque: 0.0   # 0 = no clamp
+    # Whether control loop outputs torque at startup
+    enabled: true
+
+    # Initial targets (rad, rad/s). When hold_current_on_start=true, qd will be overwritten at startup.
+    qd: 0.0
+    qd_dot: 0.0

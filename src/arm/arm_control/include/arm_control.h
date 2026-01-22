@@ -22,7 +22,8 @@ enum class ControlMode
 {
     IDLE,
     SPEED,
-    POSITION
+    POSITION,
+    TORQUE
 };
 
 class MotorControlNode : public rclcpp::Node
@@ -46,16 +47,36 @@ private:
     /* 控制状态 */
     ControlMode mode_ = ControlMode::IDLE;
     bool position_enable=false;
-    bool homed_{false};
+    // 禁用启动回零逻辑（避免电机6回0撞限位）
+    bool homed_{true};
 
     bool speed_enable_ = false;
     double target_speed_ = 0.0;
     const double speed_step_ = 0.1;
 
     std::vector<double> target_pos_;
+    std::vector<double> target_torque_;
+
+    // 阻抗控制（外环）：qd/qd_dot -> tau
+    bool impedance_active_{false};
+    std::vector<double> impedance_qd_;
+    std::vector<double> impedance_qd_dot_;
+    double impedance_kp_{0.0};
+    double impedance_kd_{0.0};
+
+    // PP + 力矩保护（仅对 1/2 号电机）
+    bool pp_torque_protect_enable_{false};
+    int pp_max_torque_6072_{0};
+    int pp_torque_threshold_6077_{0};
+    int pp_trip_count_{3};
+    std::array<int, NumOfMotors> pp_over_count_{};
+    std::array<bool, NumOfMotors> pp_tripped_{};
 
     /* ROS */
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr pos_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr torque_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr impedance_pos_sub_;
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr pp_reset_sub_;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr enable_sub_;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr set_zero_sub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
@@ -72,6 +93,9 @@ private:
 
     /* 回调 */
     void positionCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
+    void torqueCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
+    void impedancePositionCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
+    void ppResetCallback(const std_msgs::msg::Int32::SharedPtr msg);
     void enableCallback(const std_msgs::msg::Int32::SharedPtr msg);
     void setZeroCallback(const std_msgs::msg::Int32::SharedPtr msg);
 
@@ -88,6 +112,8 @@ private:
     /* CAN 指令 */
     void sendSpeedCommand();
     void sendPositionCommand();
+    void sendTorqueCommand();
+    void sendImpedanceCommand(double dt);
     void stopAllMotors();
     void emergencyStop();
     void goHome();

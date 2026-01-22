@@ -165,6 +165,14 @@ public:
     void SendPositionCommand(MOTOR* m, double position);
     int TPDOconfigPXVX(MOTOR* m, uint8_t T = 2);
     void GetPositionAndVelocity();
+
+    // DS402 SDO helper (expedited)
+    bool SDOWriteU16(MOTOR* m, uint16_t index, uint8_t subindex, uint16_t value, int timeout_ms = 50);
+    bool SDOReadI16(MOTOR* m, uint16_t index, uint8_t subindex, int16_t &out, int timeout_ms = 50);
+
+    // 32-bit expedited SDO helpers
+    bool SDOWriteI32(MOTOR* m, uint16_t index, uint8_t subindex, int32_t value, int timeout_ms = 50);
+    bool SDOReadI32(MOTOR* m, uint16_t index, uint8_t subindex, int32_t &out, int timeout_ms = 50);
 };
 
 class KvaserForSimplIQ :public KvaserForElmo

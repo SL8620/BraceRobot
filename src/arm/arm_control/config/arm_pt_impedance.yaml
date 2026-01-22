@@ -1,0 +1,15 @@
+arm_pt_impedance_node:
+  ros__parameters:
+    can_channel: 0
+    control_period_ms: 20.0
+    hold_current_on_start: true
+
+    # Per-motor impedance gains (length=6)
+    kp: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    kd: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # Per-motor torque clamp (0 = no clamp)
+    max_torque: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # Per-motor enable flags
+    enabled: [true, true, true, true, true, true]

@@ -29,6 +29,8 @@ install(TARGETS brace_state_node
 
 install(PROGRAMS
   scripts/brace_ui_node.py
+  scripts/motor5_pt_impedance_ui.py
+  scripts/arm_pt_impedance_ui.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

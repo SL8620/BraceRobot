@@ -18,12 +18,26 @@ MotorControlNode::MotorControlNode()
     initCAN();
     // 为每个电机初始化目标位置向量
     target_pos_.assign(NumOfMotors, 0.0);
+    // PT 模式下的目标力矩（默认 0）
+    target_torque_.assign(NumOfMotors, 0.0);
+
+    // 阻抗控制参数（默认 0：不输出力矩）
+    impedance_kp_ = this->declare_parameter<double>("impedance_kp", 0.0);
+    impedance_kd_ = this->declare_parameter<double>("impedance_kd", 0.0);
+    impedance_qd_.assign(NumOfMotors, 0.0);
+    impedance_qd_dot_.assign(NumOfMotors, 0.0);
+
+    // PP + 力矩保护参数（默认关闭，避免误配置）
+    pp_torque_protect_enable_ = this->declare_parameter<bool>("pp_torque_protect_enable", false);
+    pp_max_torque_6072_ = this->declare_parameter<int>("pp_max_torque_6072", 0);
+    pp_torque_threshold_6077_ = this->declare_parameter<int>("pp_torque_threshold_6077", 0);
+    pp_trip_count_ = this->declare_parameter<int>("pp_trip_count", 3);
     preset_positions_ = {
     { -15.0 * M_PI / 180.0, -15.0 * M_PI / 180.0,  0.0,               0.0,               0.0, 0.0},
     { -10.0 * M_PI / 180.0, -10.0 * M_PI / 180.0, 20.0 * M_PI / 180.0,20.0 * M_PI / 180.0,0.0, 0.0},
     {  0.0,                  0.0,                  0.0,               0.0,               0.0, 0.0} 
     };
-    goHome(); 
+    // 启动时不执行回零/回默认位姿（避免 6 号电机回 0 撞限位）
     initROS();
 
     timer_ = create_wall_timer(
@@ -60,8 +74,24 @@ void MotorControlNode::initCAN()
     for (int i = 0; i < NumOfMotors; i++)
     {
         canBus_->connectMotor(&motors_[i]);
+        // 启动默认配置为 PP（Profile Position）模式
         canBus_->RPDOconfig(&motors_[i], KvaserForGold::POSITION_MODE);
+        canBus_->modeChoose(&motors_[i], KvaserForGold::POSITION_MODE);
         canBus_->TPDOconfigPXVX(&motors_[i], 2);
+    }
+
+    // 仅对电机 1/2 设置最大力矩限制（0x6072），用于人机交互夹取保护
+    if (pp_torque_protect_enable_ && pp_max_torque_6072_ > 0)
+    {
+        for (int i = 0; i < NumOfMotors; i++)
+        {
+            const int motor_id = motors_[i].id;
+            if (motor_id == 1 || motor_id == 2)
+            {
+                const bool ok = canBus_->SDOWriteU16(&motors_[i], 0x6072, 0x00, (uint16_t)pp_max_torque_6072_);
+                RCLCPP_INFO(get_logger(), "Set motor %d 0x6072 max_torque=%d (%s)", motor_id, pp_max_torque_6072_, ok ? "OK" : "FAIL");
+            }
+        }
     }
 
     RCLCPP_INFO(get_logger(), "CAN & Motors Initialized");
@@ -72,6 +102,21 @@ void MotorControlNode::initROS()
     pos_sub_ = create_subscription<sensor_msgs::msg::JointState>(
         "/motor/position_cmd", 10,
         std::bind(&MotorControlNode::positionCallback, this, std::placeholders::_1));
+
+    // PT 力矩指令：使用 JointState.effort[0..5]
+    torque_sub_ = create_subscription<sensor_msgs::msg::JointState>(
+        "/motor/torque_cmd", 10,
+        std::bind(&MotorControlNode::torqueCallback, this, std::placeholders::_1));
+
+    // 阻抗期望位置：使用 JointState.position[0..5]（可选 velocity 作为 qd_dot）
+    impedance_pos_sub_ = create_subscription<sensor_msgs::msg::JointState>(
+        "/motor/impedance_position_cmd", 10,
+        std::bind(&MotorControlNode::impedancePositionCallback, this, std::placeholders::_1));
+
+    // 力矩保护复位：data=0 复位全部，data=1/2 复位对应电机
+    pp_reset_sub_ = create_subscription<std_msgs::msg::Int32>(
+        "/motor/pp_torque_protect_reset", 10,
+        std::bind(&MotorControlNode::ppResetCallback, this, std::placeholders::_1));
 
     // 发布 6 个电机的实时关节状态（位置/速度）
     joint_state_pub_ = create_publisher<sensor_msgs::msg::JointState>(
@@ -122,11 +167,16 @@ void MotorControlNode::positionCallback(const sensor_msgs::msg::JointState::Shar
         return;
     }
 
+    // 如果当前在 TORQUE/阻抗控制中，位置话题不触发切回位置模式
+    if (mode_ == ControlMode::TORQUE)
+    {
+        RCLCPP_WARN(get_logger(), "Ignore /motor/position_cmd while in TORQUE mode (impedance/PT)");
+        return;
+    }
+
     // 收到位置指令时自动切换到位置模式
     if (mode_ != ControlMode::POSITION)
-    {
         switchToPositionMode();
-    }
 
     for (int i = 0; i < NumOfMotors; i++)
     {
@@ -141,12 +191,7 @@ void MotorControlNode::positionCallback(const sensor_msgs::msg::JointState::Shar
 /* ================== 主循环 ================== */
 void MotorControlNode::controlLoop()
 {
-    if (!homed_)
-    {
-        goHome();
-        homed_ = true;
-        return;
-    }
+    // homed_ 默认 true：按要求不执行启动回零
 
     if (keyPressed())
         handleKey(readKey());
@@ -155,9 +200,98 @@ void MotorControlNode::controlLoop()
         sendSpeedCommand();
     else if (mode_ == ControlMode::POSITION)
         sendPositionCommand();
+    else if (mode_ == ControlMode::TORQUE)
+    {
+        if (impedance_active_)
+            sendImpedanceCommand(0.02); // timer_ 20ms
+        else
+            sendTorqueCommand();
+    }
 
     // 周期性发布电机的实际位置/速度
     publishJointStates();
+}
+
+void MotorControlNode::ppResetCallback(const std_msgs::msg::Int32::SharedPtr msg)
+{
+    const int id = msg->data;
+    if (id == 0)
+    {
+        pp_tripped_.fill(false);
+        pp_over_count_.fill(0);
+        RCLCPP_INFO(get_logger(), "PP torque protect reset: all motors");
+        return;
+    }
+    if (id >= 1 && id <= NumOfMotors)
+    {
+        pp_tripped_[id - 1] = false;
+        pp_over_count_[id - 1] = 0;
+        RCLCPP_INFO(get_logger(), "PP torque protect reset: motor %d", id);
+        return;
+    }
+    RCLCPP_WARN(get_logger(), "PP torque protect reset: invalid id=%d", id);
+}
+
+void MotorControlNode::torqueCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
+{
+    if (msg->effort.size() < NumOfMotors)
+    {
+        RCLCPP_WARN(get_logger(), "Torque command size (%zu) < NumOfMotors (%d)",
+                    msg->effort.size(), NumOfMotors);
+        return;
+    }
+
+    if (mode_ != ControlMode::TORQUE)
+    {
+        stopAllMotors();
+        mode_ = ControlMode::TORQUE;
+        for (int i = 0; i < NumOfMotors; i++)
+            canBus_->modeChoose(&motors_[i], KvaserForGold::TORQUE_MODE);
+        RCLCPP_INFO(get_logger(), "Switched to TORQUE mode");
+    }
+
+    for (int i = 0; i < NumOfMotors; i++)
+        target_torque_[i] = msg->effort[i];
+
+    // 显式力矩指令优先：收到后退出阻抗控制
+    impedance_active_ = false;
+
+    sendTorqueCommand();
+}
+
+void MotorControlNode::impedancePositionCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
+{
+    if (msg->position.size() < NumOfMotors)
+    {
+        RCLCPP_WARN(get_logger(), "Impedance position cmd size (%zu) < NumOfMotors (%d)",
+                    msg->position.size(), NumOfMotors);
+        return;
+    }
+
+    if (mode_ != ControlMode::TORQUE)
+    {
+        stopAllMotors();
+        mode_ = ControlMode::TORQUE;
+        for (int i = 0; i < NumOfMotors; i++)
+            canBus_->modeChoose(&motors_[i], KvaserForGold::TORQUE_MODE);
+        RCLCPP_INFO(get_logger(), "Switched to TORQUE mode (impedance)");
+    }
+
+    for (int i = 0; i < NumOfMotors; i++)
+        impedance_qd_[i] = msg->position[i] + zero_offsets_[i];
+
+    if (msg->velocity.size() >= NumOfMotors)
+    {
+        for (int i = 0; i < NumOfMotors; i++)
+            impedance_qd_dot_[i] = msg->velocity[i];
+    }
+    else
+    {
+        for (int i = 0; i < NumOfMotors; i++)
+            impedance_qd_dot_[i] = 0.0;
+    }
+
+    impedance_active_ = true;
 }
 
 
@@ -169,6 +303,13 @@ void MotorControlNode::handleKey(char key)
     {
     case '1': switchToSpeedMode(); break;
     case '3': switchToPositionMode(); break;
+    case '7':
+        stopAllMotors();
+        mode_ = ControlMode::TORQUE;
+        for (int i = 0; i < NumOfMotors; i++)
+            canBus_->modeChoose(&motors_[i], KvaserForGold::TORQUE_MODE);
+        RCLCPP_INFO(get_logger(), "Switched to TORQUE mode");
+        break;
 
     case '4':if (mode_ == ControlMode::POSITION)
     {
@@ -277,12 +418,89 @@ void MotorControlNode::sendSpeedCommand()
 
 void MotorControlNode::sendPositionCommand()
 {
+    // 仅在 PP 位置模式下：使用 PDO 下发（RPDO: 6040 + 607A）
     for (int i = 0; i < NumOfMotors; i++)
-        canBus_->PositionMode(&motors_[i], target_pos_[i], 0.5);
+    {
+        const int motor_id = motors_[i].id;
+
+        // 仅对 1/2 号电机进行“力矩触发停止并保持当前位置”
+        if (pp_torque_protect_enable_ && (motor_id == 1 || motor_id == 2) && pp_torque_threshold_6077_ > 0)
+        {
+            if (!pp_tripped_[i])
+            {
+                int16_t tau_actual = 0;
+                const bool ok = canBus_->SDOReadI16(&motors_[i], 0x6077, 0x00, tau_actual);
+                if (ok && std::abs((int)tau_actual) >= pp_torque_threshold_6077_)
+                    pp_over_count_[i]++;
+                else
+                    pp_over_count_[i] = 0;
+
+                if (pp_over_count_[i] >= pp_trip_count_)
+                {
+                    // 触发后：锁定目标为当前位置（保持位置）
+                    try
+                    {
+                        const double q_now = canBus_->GetPosition(&motors_[i]);
+                        target_pos_[i] = q_now;
+                    }
+                    catch (...)
+                    {
+                        // 读不到就保持原目标，但标记已触发
+                    }
+
+                    pp_tripped_[i] = true;
+                    RCLCPP_WARN(get_logger(), "Motor %d torque protect TRIPPED (0x6077=%d), hold position", motor_id, (int)tau_actual);
+                }
+            }
+        }
+
+        canBus_->SendPositionCommand(&motors_[i], target_pos_[i]);
+    }
+}
+
+void MotorControlNode::sendTorqueCommand()
+{
+    for (int i = 0; i < NumOfMotors; i++)
+    canBus_->SendTorqueCommand(&motors_[i], target_torque_[i]);
+}
+
+void MotorControlNode::sendImpedanceCommand(double dt)
+{
+    // tau = Kp*(qd - q) + Kd*(qd_dot - qdot)
+    (void)dt;
+
+    for (int i = 0; i < NumOfMotors; i++)
+    {
+        double q = 0.0;
+        double qdot = 0.0;
+        try
+        {
+            q = canBus_->GetPosition(&motors_[i]);
+            qdot = canBus_->GetVelocity(&motors_[i]);
+        }
+        catch (...)
+        {
+            // 读取失败时不给力矩，避免失控
+            canBus_->SendTorqueCommand(&motors_[i], 0.0);
+            continue;
+        }
+
+        const double e = impedance_qd_[i] - q;
+        const double edot = impedance_qd_dot_[i] - qdot;
+        const double tau = impedance_kp_ * e + impedance_kd_ * edot;
+        canBus_->SendTorqueCommand(&motors_[i], tau);
+    }
 }
 
 void MotorControlNode::stopAllMotors()
 {
+    if (mode_ == ControlMode::TORQUE)
+    {
+        for (int i = 0; i < NumOfMotors; i++)
+            canBus_->SendTorqueCommand(&motors_[i], 0.0);
+        return;
+    }
+
     for (int i = 0; i < NumOfMotors; i++)
         canBus_->SpeedMode(&motors_[i], 0.0);
 }
@@ -359,7 +577,9 @@ void MotorControlNode::setZeroCallback(const std_msgs::msg::Int32::SharedPtr msg
 
 void MotorControlNode::goHome()
 {
-    RCLCPP_INFO(get_logger(), "Going to home position (0 rad)");
+    // 按要求禁用回零/回默认位姿
+    RCLCPP_INFO(get_logger(), "goHome() skipped");
+    return;
 
     // 1. 切换位置模式
     mode_ = ControlMode::POSITION;
