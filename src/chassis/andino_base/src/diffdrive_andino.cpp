@@ -100,10 +100,16 @@ hardware_interface::CallbackReturn DiffDriveAndino::on_configure(const rclcpp_li
   RCLCPP_INFO(logger_, "On configure...");
 
   // Set up communication with motor driver controller.
+  // 阶段 1：设置通道，注册电机（此时不创建 Kvaser，不操作 CAN）
   motor_driver_.SetCanChannel(config_.can_channel);
   motor_driver_.Setup(config_.serial_device, config_.baud_rate, config_.left_motor_id);
   motor_driver_.Setup(config_.serial_device, config_.baud_rate, config_.right_motor_id);
+
+  // 阶段 2：设置左右电机 ID 和方向（此时 vector 不再增长，指针稳定）
   motor_driver_.SetMotorIds(config_.left_motor_id, config_.right_motor_id);
+
+  // 阶段 3：创建 KvaserForGold 并完成所有 CAN 配置
+  motor_driver_.Connect();
   RCLCPP_INFO(logger_, "Finished Configuration");
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -155,8 +161,11 @@ hardware_interface::CallbackReturn DiffDriveAndino::on_deactivate(const rclcpp_l
 }
 
 hardware_interface::return_type DiffDriveAndino::read(const rclcpp::Time& /* time */, const rclcpp::Duration& /* period */) {
-  left_wheel_.pos_= motor_driver_.get_position(config_.left_motor_id);   // 0x6064
-  left_wheel_.vel_ = motor_driver_.get_velocity(config_.left_motor_id);   // 0x606C
+  // 一次性通过 TPDO 刷新所有电机的位置/速度缓存，确保左右轮数据同步
+  motor_driver_.UpdateSensorData();
+
+  left_wheel_.pos_= motor_driver_.get_position(config_.left_motor_id);
+  left_wheel_.vel_ = motor_driver_.get_velocity(config_.left_motor_id);
 
   right_wheel_.pos_ = motor_driver_.get_position(config_.right_motor_id);
   right_wheel_.vel_ = motor_driver_.get_velocity(config_.right_motor_id);
@@ -176,7 +185,7 @@ hardware_interface::return_type DiffDriveAndino::write(const rclcpp::Time& /* ti
 
   const double left_value_target = left_wheel_.cmd_;
   const double right_value_target = right_wheel_.cmd_;
-  RCLCPP_INFO(logger_, "Target speed - Left: %.3f, Right: %.3f", left_value_target, right_value_target);
+  RCLCPP_DEBUG(logger_, "Target speed - Left: %.3f, Right: %.3f", left_value_target, right_value_target);
   motor_driver_.SetMotorValues(left_value_target, right_value_target);
 
   return hardware_interface::return_type::OK;

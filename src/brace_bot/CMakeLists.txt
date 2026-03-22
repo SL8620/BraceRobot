@@ -31,6 +31,7 @@ install(PROGRAMS
   scripts/brace_ui_node.py
   scripts/motor5_pt_impedance_ui.py
   scripts/arm_pt_impedance_ui.py
+  scripts/cmd_vel_linear_negate_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

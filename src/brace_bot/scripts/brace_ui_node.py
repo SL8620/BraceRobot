@@ -252,12 +252,6 @@ class BraceUINode(Node):
         if clamped:
             self.get_logger().info('Some motor targets were clamped to their limits.')
 
-        # 对电机 5 和 6 中的一个改符号：这里将电机 6 的期望角度取反，
-        # 这样在 UI 中输入同号时，5/6 实际运动方向相反。
-        # 索引 4 对应电机 5，索引 5 对应电机 6。
-        if len(targets_deg) >= 6:
-            targets_deg[5] = -targets_deg[5]
-
         rad = math.pi / 180.0
         js = JointState()
         js.position = [d * rad for d in targets_deg]
@@ -286,12 +280,49 @@ class BraceUINode(Node):
     # ----------------- 底盘 UI -----------------
     def _build_base_ui(self, frame):
         ttk.Label(frame, text='Base control (cmd_vel):').grid(row=0, column=0, columnspan=3, sticky='w', padx=5, pady=5)
+        ttk.Label(frame, text='按住按钮持续运动，松开自动停止').grid(row=4, column=0, columnspan=3, sticky='w', padx=5, pady=2)
 
-        ttk.Button(frame, text='Forward', command=lambda: self._send_cmd_vel(0.2, 0.0)).grid(row=1, column=1, padx=5, pady=5)
-        ttk.Button(frame, text='Backward', command=lambda: self._send_cmd_vel(-0.2, 0.0)).grid(row=3, column=1, padx=5, pady=5)
-        ttk.Button(frame, text='Left', command=lambda: self._send_cmd_vel(0.0, 0.5)).grid(row=2, column=0, padx=5, pady=5)
-        ttk.Button(frame, text='Right', command=lambda: self._send_cmd_vel(0.0, -0.5)).grid(row=2, column=2, padx=5, pady=5)
-        ttk.Button(frame, text='Stop', command=lambda: self._send_cmd_vel(0.0, 0.0)).grid(row=2, column=1, padx=5, pady=5)
+        self._cmd_vel_active = None  # (linear_x, angular_z) or None
+        self._cmd_vel_timer_id = None
+
+        def make_btn(text, row, col, vx, wz):
+            btn = ttk.Button(frame, text=text)
+            btn.grid(row=row, column=col, padx=5, pady=5)
+            btn.bind('<ButtonPress-1>', lambda e: self._start_cmd_vel(vx, wz))
+            btn.bind('<ButtonRelease-1>', lambda e: self._stop_cmd_vel())
+            return btn
+
+        make_btn('Forward',  1, 1,  0.2,  0.0)
+        make_btn('Backward', 3, 1, -0.2,  0.0)
+        make_btn('Left',     2, 0,  0.0,  0.5)
+        make_btn('Right',    2, 2,  0.0, -0.5)
+        ttk.Button(frame, text='Stop', command=lambda: self._stop_cmd_vel()).grid(row=2, column=1, padx=5, pady=5)
+
+    def _start_cmd_vel(self, linear_x: float, angular_z: float):
+        self._cmd_vel_active = (linear_x, angular_z)
+        self._publish_cmd_vel_tick()
+
+    def _stop_cmd_vel(self):
+        self._cmd_vel_active = None
+        if self._cmd_vel_timer_id is not None:
+            self.root.after_cancel(self._cmd_vel_timer_id)
+            self._cmd_vel_timer_id = None
+        # 发送零速确保停车
+        twist = self._twist_type()
+        twist.linear.x = 0.0
+        twist.angular.z = 0.0
+        self.cmd_vel_pub.publish(twist)
+
+    def _publish_cmd_vel_tick(self):
+        if self._cmd_vel_active is None:
+            return
+        vx, wz = self._cmd_vel_active
+        twist = self._twist_type()
+        twist.linear.x = vx
+        twist.angular.z = wz
+        self.cmd_vel_pub.publish(twist)
+        # 每 100ms 重复发布（10Hz），保持 diff_drive_controller 不超时
+        self._cmd_vel_timer_id = self.root.after(100, self._publish_cmd_vel_tick)
 
     def _send_cmd_vel(self, linear_x: float, angular_z: float):
         twist = self._twist_type()

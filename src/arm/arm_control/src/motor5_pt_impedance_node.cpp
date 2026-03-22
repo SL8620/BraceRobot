@@ -44,7 +44,7 @@ public:
         // If requested, capture current position as initial target to avoid a step.
         if (hold_current_on_start_)
         {
-            qd_ = can_bus_->GetPosition(&motors_[1]);
+            qd_ = can_bus_->GetPosition(&motors_[0]);
             qd_dot_ = 0.0;
             RCLCPP_INFO(get_logger(), "hold_current_on_start=true -> qd set to current position: %.6f rad", qd_);
         }
@@ -80,7 +80,7 @@ public:
         {
             if (can_bus_)
             {
-                can_bus_->motorDisable(&motors_[1]);
+                can_bus_->motorDisable(&motors_[0]);
                 can_bus_->canRelease();
             }
         }
@@ -90,30 +90,27 @@ public:
 private:
     void initMotorStruct()
     {
-        // IMPORTANT: KvaserForElmo/KvaserForGold internally uses pNode[1..NumOfNodes].
-        // So we keep index 0 as a dummy and store the motor at index 1.
         motors_.fill(MOTOR{});
 
-        motors_[1].id = motor_id_;
-        motors_[1].connect = true;
-        motors_[1].Kt_inv = 0.1;
-        motors_[1].In = 10.0;
-        motors_[1].Wn = 50.0;
-        motors_[1].direction = 1;
-        motors_[1].encoder.count = 131072;
-        motors_[1].encoder.AbsZeroPos = 0;
-        motors_[1].InitPos = 0.0;
+        motors_[0].id = motor_id_;
+        motors_[0].connect = true;
+        motors_[0].Kt_inv = 0.1;
+        motors_[0].In = 10.0;
+        motors_[0].Wn = 50.0;
+        motors_[0].direction = 1;
+        motors_[0].encoder.count = 131072;
+        motors_[0].encoder.AbsZeroPos = 0;
+        motors_[0].InitPos = 0.0;
     }
 
     void initCanAndMotor()
     {
         can_bus_ = std::make_shared<KvaserForGold>(can_channel_, 1, motors_.data(), "Motor5PtImpedance");
 
-        // Connect + configure only this motor.
-        can_bus_->connectMotor(&motors_[1]);
-        can_bus_->RPDOconfig(&motors_[1], KvaserForGold::TORQUE_MODE);
-        can_bus_->modeChoose(&motors_[1], KvaserForGold::TORQUE_MODE);
-        can_bus_->TPDOconfigPXVX(&motors_[1], 2);
+        can_bus_->connectMotor(&motors_[0]);
+        can_bus_->RPDOconfig(&motors_[0], KvaserForGold::TORQUE_MODE);
+        can_bus_->modeChoose(&motors_[0], KvaserForGold::TORQUE_MODE);
+        can_bus_->TPDOconfigPXVX(&motors_[0], 2);
 
         RCLCPP_INFO(get_logger(), "Motor %d initialized in TORQUE (PT) mode", motor_id_);
     }
@@ -136,15 +133,15 @@ private:
         const int cmd = msg->data;
         if (cmd == 1)
         {
-            can_bus_->motorEnable(&motors_[1]);
+            can_bus_->motorEnable(&motors_[0]);
             enabled_ = true;
             RCLCPP_INFO(get_logger(), "Motor %d enabled via /motor5/enable_cmd", motor_id_);
         }
         else if (cmd == 0)
         {
             // Send zero torque once before disabling for safety.
-            can_bus_->SendTorqueCommand(&motors_[1], 0.0);
-            can_bus_->motorDisable(&motors_[1]);
+            can_bus_->SendTorqueCommand(&motors_[0], 0.0);
+            can_bus_->motorDisable(&motors_[0]);
             enabled_ = false;
             RCLCPP_INFO(get_logger(), "Motor %d disabled via /motor5/enable_cmd", motor_id_);
         }
@@ -183,8 +180,8 @@ private:
         if (!enabled_)
             return;
 
-        const double q = can_bus_->GetPosition(&motors_[1]);
-        const double qdot = can_bus_->GetVelocity(&motors_[1]);
+        const double q = can_bus_->GetPosition(&motors_[0]);
+        const double qdot = can_bus_->GetVelocity(&motors_[0]);
 
         double tau = kp_ * (qd_ - q) + kd_ * (qd_dot_ - qdot);
 
@@ -194,7 +191,7 @@ private:
             if (tau < -max_torque_) tau = -max_torque_;
         }
 
-        can_bus_->SendTorqueCommand(&motors_[1], tau);
+        can_bus_->SendTorqueCommand(&motors_[0], tau);
 
         if (state_pub_)
         {

@@ -293,7 +293,15 @@ private:
       return;
     }
 
-    // 2. 动作已发送，等待 delay_s 之后进入下一个 step
+    // 2. 等待 delay_s 期间继续重发电机指令，确保驱动器接收到
+    if (step.has_motor)
+    {
+      publishMotorTargets(
+        step.motor1_deg, step.motor2_deg,
+        step.motor3_deg, step.motor4_deg,
+        step.motor5_deg, step.motor6_deg);
+    }
+
     const double elapsed = (now - exec_ctx_.step_start_time).seconds();
     if (elapsed >= step.delay_s)
     {

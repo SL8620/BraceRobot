@@ -113,12 +113,12 @@ int KvaserForElmo::netInit()
     if (flag == EXIT_FAILURE)
     {
         std::cout << "connect failed!" << std::endl;
-        return EXIT_FAILURE;
+        return EXIT_FAILURE;    
     }
 
     canFlushReceiveQueue(handle);
     std::cout << NameOfNodes << " ";
-    for (i = 1; i <= NumOfNodes; i++)
+    for (i = 0; i <= NumOfNodes; i++)
     {
         if ((pNode + i)->connect)
         {

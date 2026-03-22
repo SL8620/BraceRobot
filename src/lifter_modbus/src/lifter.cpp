@@ -685,7 +685,11 @@ bool Lifter::sendRawRequest(const std::uint8_t *frame, int length) const
 	{
 		return false;
 	}
-	buildModbusFrame(frame, adu);
+	// 拷贝原始报文并附加 CRC（支持任意长度，不限于 6 字节）
+	std::memcpy(adu, frame, static_cast<size_t>(length));
+	std::uint16_t crc_send = compute_crc16(frame, static_cast<std::size_t>(length));
+	adu[length] = static_cast<std::uint8_t>(crc_send & 0xFF);
+	adu[length + 1] = static_cast<std::uint8_t>((crc_send >> 8) & 0xFF);
 
 	int total_written = 0;
 	int to_write = length + 2;

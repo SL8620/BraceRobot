@@ -17,8 +17,8 @@ states:
       
   low:
     # Step 2: 再动电机
-    - motor1: -10.0
-      motor2: -10.0
+    - motor1: -18.0
+      motor2: -18.0
       motor3: 0.0
       motor4: 0.0
       motor5: -10.0
@@ -27,8 +27,8 @@ states:
       delay: 3.0
 
   pick:
-    - motor1: -5.0
-      motor2: -5.0
+    - motor1: -15.0
+      motor2: -15.0
       motor3: 10.0
       motor4: 10.0
       motor5: 15.0
@@ -37,11 +37,11 @@ states:
       delay: 3.0
 
   high:
-    - motor1: -5.0
-      motor2: -5.0
+    - motor1: -12.0
+      motor2: -12.0
       motor3: 20.0
       motor4: 20.0
-      motor5: 15.0
-      motor6: -15.0
-      lifter: 80
+      motor5: 40.0
+      motor6: -40.0
+      lifter: 120
       delay: 0.0

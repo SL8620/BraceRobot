@@ -117,7 +117,7 @@ int KvaserForElmo::netInit()
 
     canFlushReceiveQueue(handle);
     std::cout << NameOfNodes << " ";
-    for (i = 1; i <= NumOfNodes; i++)
+    for (i = 0; i < NumOfNodes; i++)
     {
         if ((pNode + i)->connect)
         {
@@ -181,7 +181,7 @@ int KvaserForElmo::motorDisable(MOTOR*m)
 
 void KvaserForElmo::DisableMotors()
 {
-    for (int i = 1; i <= NumOfNodes; i++)if ((pNode + i)->connect)motorDisable(pNode + i);
+    for (int i = 0; i < NumOfNodes; i++)if ((pNode + i)->connect)motorDisable(pNode + i);
     std::cout<<  NameOfNodes << 's' << " have been disabled!" << std::endl;
 }
 /*选择电机运动模式*/
@@ -275,7 +275,7 @@ int KvaserForElmo::motorReset(MOTOR* m)
 void KvaserForElmo::ResetMotors(double WaitTime)
 {
     MOTOR* temp;
-    for (temp = pNode + 1; temp <= pNode + NumOfNodes; temp++)
+    for (temp = pNode; temp < pNode + NumOfNodes; temp++)
     {
         if (temp->connect)motorReset(temp);
     }
@@ -286,7 +286,7 @@ void KvaserForElmo::ResetMotors(double WaitTime)
 void KvaserForElmo::PosInit(double WaitTime)
 {
     MOTOR* temp;
-    for (temp = pNode + 1; temp <= pNode + NumOfNodes; temp++)
+    for (temp = pNode; temp < pNode + NumOfNodes; temp++)
     {
         if (temp->connect)
         {
@@ -304,23 +304,27 @@ double KvaserForElmo::GetPosition(MOTOR* m)
     CANMessage messageR = { m->id | 0x280,8,{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} };
     canFlushReceiveQueue(handle);
     canSend(&messageS);
-    do { canReceive(&messageR); } while (!((messageR.Byte[0] == 'P') && (messageR.Byte[1] == 'X') && ((messageR.Byte[3] & 0x40) == 0)));
+
+    // 带超时的接收，防止丢帧时阻塞整个控制循环
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+    bool received = false;
+    do {
+        if (canReceive(&messageR) == EXIT_SUCCESS &&
+            messageR.Byte[0] == 'P' && messageR.Byte[1] == 'X' &&
+            (messageR.Byte[3] & 0x40) == 0) {
+            received = true;
+            break;
+        }
+    } while (std::chrono::steady_clock::now() < deadline);
+
+    if (!received) {
+        std::cerr << "[GetPosition] Timeout for motor " << m->id << std::endl;
+        return m->px;  // 返回上一次已知位置
+    }
+
     int data = byte2int(messageR.Byte + 4) - m->encoder.AbsZeroPos;
     double pos_rad = cnt2rad(data, m);
-
-        // 打印反馈信息，限制频率为约 5Hz，避免刷屏
-        using Clock = std::chrono::steady_clock;
-        static Clock::time_point last_log_time = Clock::now();
-        auto now = Clock::now();
-        auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_log_time).count();
-        if (dt_ms >= 200)  // 约 5Hz
-        {
-                last_log_time = now;
-                std::cout << "[Position] Motor ID: " << m->id
-                                    << " | Raw Cnt: " << data
-                                    << " | Position: " << pos_rad << " rad"
-                                    << std::endl;
-        }
+    m->px = pos_rad;  // 缓存最新位置供超时时使用
 
         return pos_rad;
 }
@@ -331,23 +335,27 @@ double KvaserForElmo::GetVelocity(MOTOR* m)
     CANMessage messageR = { m->id | 0x280,8,{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} };
     canFlushReceiveQueue(handle);
     canSend(&messageS);
-    do { canReceive(&messageR); } while (!((messageR.Byte[0] == 'V') && (messageR.Byte[1] == 'X') && ((messageR.Byte[3] & 0x40) == 0)));
+
+    // 带超时的接收，防止丢帧时阻塞整个控制循环
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+    bool received = false;
+    do {
+        if (canReceive(&messageR) == EXIT_SUCCESS &&
+            messageR.Byte[0] == 'V' && messageR.Byte[1] == 'X' &&
+            (messageR.Byte[3] & 0x40) == 0) {
+            received = true;
+            break;
+        }
+    } while (std::chrono::steady_clock::now() < deadline);
+
+    if (!received) {
+        std::cerr << "[GetVelocity] Timeout for motor " << m->id << std::endl;
+        return m->vx;  // 返回上一次已知速度
+    }
+
     int data = byte2int(messageR.Byte + 4);
     double vel_rad = cnt2rad(data, m);
-
-        // 打印反馈信息，限制频率为约 5Hz
-        using Clock = std::chrono::steady_clock;
-        static Clock::time_point last_log_time_v = Clock::now();
-        auto now = Clock::now();
-        auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_log_time_v).count();
-        if (dt_ms >= 200)  // 约 5Hz
-        {
-                last_log_time_v = now;
-                std::cout << "[Velocity] Motor ID: " << m->id
-                                    << " | Raw Cnt/s: " << data
-                                    << " | Velocity: " << vel_rad << " rad/s"
-                                    << std::endl;
-        }
+    m->vx = vel_rad;  // 缓存最新速度供超时时使用
 
         return vel_rad;
 }
@@ -363,11 +371,10 @@ int KvaserForElmo::stop(MOTOR* m)
 void KvaserForElmo::stopAll()
 {
     CANMessage Tx = { 0x000 ,8,{ 'S', 'T', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };//ST
-    MOTOR* temp = pNode;
     int i;
     for (i = 0; i < NumOfNodes; i++)
     {
-        temp++;
+        MOTOR* temp = pNode + i;
         Tx.COB_ID = temp->id | 0x300;
         status = canWrite(handle, Tx.COB_ID, Tx.Byte, Tx.DLC, 0);
         checkStatus("canWrite");
@@ -460,7 +467,7 @@ void KvaserForGold::SendTorqueCommandForAll()
     double current;
     int16_t current_permillage;
     MOTOR* temp;
-    for (temp = pNode + 1; temp <= pNode + NumOfNodes; temp++)
+    for (temp = pNode; temp < pNode + NumOfNodes; temp++)
     {
         if (temp->connect)
         {
@@ -494,7 +501,7 @@ void KvaserForGold::SendSpeedCommandForAll()
     double speed;
     int jv;
     MOTOR* temp;
-    for (temp = pNode + 1; temp <= pNode + NumOfNodes; temp++)
+    for (temp = pNode; temp < pNode + NumOfNodes; temp++)
     {
         if (temp->connect)
         {
@@ -584,52 +591,53 @@ void KvaserForGold::GetPositionAndVelocity()
     if (!pNode || NumOfNodes <= 0)
         return;
 
-    CANMessage Rx;
-    Rx.DLC = 8; // 每个 PDO 帧 8 字节
+    // 先清空接收队列中的旧帧，等待新一批 TPDO 到达
+    canFlushReceiveQueue(handle);
 
+    // 对每个电机，接收其 TPDO4 帧（COB-ID = 0x480 + NodeID）
     for (int i = 0; i < NumOfNodes; i++)
     {
         MOTOR* motor = &pNode[i];
         if (!motor->connect)
             continue;
 
-        // 1️⃣ 设置 TPDO1 默认 COB-ID = 0x180 + NodeID
-        Rx.COB_ID = 0x180 + motor->id;
+        CANMessage Rx;
+        Rx.COB_ID = 0x480 + motor->id;
+        Rx.DLC = 8;
 
-        // 2️⃣ 接收 CAN 帧（非阻塞或带超时）
-        int timeout_ms = 50; // 50ms 超时
-        auto start_time = std::chrono::steady_clock::now();
-        int ret;
-        while ((ret = canReceive(&Rx)) != EXIT_SUCCESS)
+        // 带超时接收，TPDO 周期 2ms，50ms 超时足够
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+        bool received = false;
+        while (std::chrono::steady_clock::now() < deadline)
         {
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count() > timeout_ms)
+            if (canReceive(&Rx) == EXIT_SUCCESS)
             {
-                std::cerr << "⚠️ 电机 " << motor->id << " TPDO 超时" << std::endl;
+                received = true;
+                // 不 break，继续读取以获得最新帧（丢弃旧帧）
+                // 但为避免死循环，设置小限额
+                for (int drain = 0; drain < 50; drain++)
+                {
+                    CANMessage newer;
+                    newer.COB_ID = Rx.COB_ID;
+                    newer.DLC = 8;
+                    if (canReceive(&newer) == EXIT_SUCCESS)
+                        Rx = newer;  // 用更新的帧替换
+                    else
+                        break;
+                }
                 break;
             }
         }
 
-        if (ret != EXIT_SUCCESS)
-            continue; // 本次循环跳过
+        if (!received)
+            continue; // 超时，保持上一次的缓存值
 
-        // 3️⃣ 打印原始 CAN 数据（调试用）
-        std::cout << "电机 " << motor->id << " 原始 CAN 数据: ";
-        for (unsigned int k = 0; k < Rx.DLC; ++k)
-            std::cout << std::hex << static_cast<int>(Rx.Byte[k]) << " ";
-        std::cout << std::dec << std::endl;
+        // TPDO4 映射：前 4 字节速度(0x6069)，后 4 字节位置(0x6064)
+        int data_vx = byte2int(Rx.Byte);
+        int data_px = byte2int(Rx.Byte + 4);
 
-        // 4️⃣ 解析速度和位置
-        // 假设 TPDO1 前 4 字节速度，后 4 字节位置
-        int data_vx = byte2int(Rx.Byte);         // 前 4 字节速度
-        int data_px = byte2int(Rx.Byte + 4);     // 后 4 字节位置
-
-        motor->vx = cnt2rad(data_vx, motor);                       // 脉冲转 rad/s
-        motor->px = cnt2rad(data_px - motor->encoder.AbsZeroPos, motor); // 脉冲转 rad
-
-        // 5️⃣ 打印解析结果
-        std::cout << "解析后: 速度 = " << motor->vx
-                  << " rad/s, 位置 = " << motor->px << " rad" << std::endl;
+        motor->vx = cnt2rad(data_vx, motor);
+        motor->px = cnt2rad(data_px - motor->encoder.AbsZeroPos, motor);
     }
 }
 

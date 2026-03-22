@@ -51,8 +51,9 @@ class Motor5PtImpedanceUINode(Node):
             self.get_logger().error('tkinter not available, UI will not start.')
             return
 
-        self.ui_thread = threading.Thread(target=self._init_ui, daemon=True)
-        self.ui_thread.start()
+        # NOTE: Tkinter must run on the main thread.
+        #       UI is launched from main() after rclpy.spin runs in a daemon thread.
+        self.root = None
 
         # Periodically refresh kp/kd from remote node (in case changed elsewhere)
         self.create_timer(0.5, self._refresh_params)
@@ -262,12 +263,23 @@ class Motor5PtImpedanceUINode(Node):
 def main(argv=None):
     rclpy.init(args=argv)
     node = Motor5PtImpedanceUINode()
+
+    # ROS spin runs on a daemon thread; Tkinter must run on the main thread.
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
+
     try:
-        rclpy.spin(node)
+        node._init_ui()
     except KeyboardInterrupt:
         pass
-    node.destroy_node()
-    rclpy.shutdown()
+    finally:
+        try:
+            if hasattr(node, 'root') and node.root:
+                node.root.quit()
+        except Exception:
+            pass
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

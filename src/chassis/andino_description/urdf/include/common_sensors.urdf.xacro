@@ -88,7 +88,7 @@
   <joint name="camera_joint" type="fixed">
     <parent link="${parent_link}"/>
     <child link="camera_link"/>
-    <origin xyz="${sensor_prop['camera']['dx']} ${sensor_prop['camera']['dy']} ${sensor_prop['camera']['dz']}" rpy="0 0 0"/>
+    <origin xyz="${sensor_prop['camera']['dx']} ${sensor_prop['camera']['dy']} ${sensor_prop['camera']['dz']}" rpy="${sensor_prop['camera']['roll']} ${sensor_prop['camera']['pitch']} ${sensor_prop['camera']['yaw']}"/>
     <axis xyz="0 1 0" />
   </joint>
 

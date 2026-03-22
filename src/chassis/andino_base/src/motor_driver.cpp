@@ -21,12 +21,8 @@
 
 namespace andino_base {
 
-MotorDriver::MotorDriver() : kvaser_(nullptr), can_channel_(0), num_nodes_(2), timeout_ms_(200)
+MotorDriver::MotorDriver() : kvaser_(nullptr), can_channel_(0), num_nodes_(0), timeout_ms_(200)
 {
-	// default node ids: change if your system uses different ids
-	node_ids_.push_back(1);
-	node_ids_.push_back(2);
-	motors_.resize(num_nodes_ + 1); // we'll use 1-based indexing to match your earlier code (motor at index i)
 }
 
 MotorDriver::~MotorDriver() 
@@ -37,7 +33,7 @@ MotorDriver::~MotorDriver()
 		// attempt to gracefully disable motors
 		try 
 		{
-			//kvaser_->DisableMotors();
+			kvaser_->DisableMotors();
 		} 
 		catch (...) 
 		{
@@ -59,6 +55,14 @@ void MotorDriver::SetMotorIds(int left_motor_id, int right_motor_id)
 	std::lock_guard<std::mutex> lock(mutex_);
 	left_motor_id_ = left_motor_id;
 	right_motor_id_ = right_motor_id;
+
+	// 左轮电机镜像安装，需要反向。通过 direction 字段统一处理，
+	// 使 rad2cnt / cnt2rad 自动完成符号翻转，read/write 方向对称。
+	for (int i = 0; i < num_nodes_; ++i) {
+		if (motors_ptr_ && motors_ptr_[i].id == left_motor_id) {
+			motors_ptr_[i].direction = -1;
+		}
+	}
 }
 
 void MotorDriver::Setup(const std::string& , int32_t /*baud_rate*/,int motor_id) 
@@ -86,16 +90,43 @@ void MotorDriver::Setup(const std::string& , int32_t /*baud_rate*/,int motor_id)
 	motors_ptr_ = motors_vec_.data();
 	num_nodes_ = motors_vec_.size();
 
-	if (!kvaser_) 
-	{
-		kvaser_ = new KvaserForGold(can_channel_, num_nodes_, motors_ptr_, "TestMotor");
-	}
+    std::cout << "电机 " << m.id << " 已注册 (共 " << num_nodes_ << " 台)" << std::endl;
+}
 
-    kvaser_->connectMotor(&m);
-    kvaser_->RPDOconfig(&m, KvaserForGold::SPEED_MODE);
-    kvaser_->TPDOconfigPXVX(&m, 2);
-    kvaser_->modeChoose(&m, KvaserForGold::SPEED_MODE);
-    std::cout << "电机 " << m.id << " 已进入位置模式。" << std::endl;
+void MotorDriver::Connect()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (!motors_ptr_ || num_nodes_ == 0) 
+	{
+        std::cerr << "No motors registered, call Setup() first." << std::endl;
+        return;
+    }
+
+    // 确保 motors_ptr_ 指向最新的 vector 数据（之后不再 push_back）
+    motors_ptr_ = motors_vec_.data();
+
+    if (!kvaser_) 
+	{
+        kvaser_ = new KvaserForGold(can_channel_, num_nodes_, motors_ptr_, "ChassisMotor");
+    } 
+	else 
+	{
+        // 同步指针和数量，防止悬空
+        kvaser_->pNode = motors_ptr_;
+        kvaser_->NumOfNodes = num_nodes_;
+    }
+
+    for (int i = 0; i < num_nodes_; ++i) 
+	{
+        MOTOR* m = &motors_ptr_[i];
+        if (!m->connect) continue;
+        kvaser_->connectMotor(m);
+        kvaser_->RPDOconfig(m, KvaserForGold::SPEED_MODE);
+        kvaser_->TPDOconfigPXVX(m, 2);
+        kvaser_->modeChoose(m, KvaserForGold::SPEED_MODE);
+        std::cout << "电机 " << m->id << " 已进入速度模式。" << std::endl;
+    }
 }
 
 bool MotorDriver::is_connected() const 
@@ -120,21 +151,23 @@ void MotorDriver::SetMotorValues(double val_left, double val_right) {
         return;
     }
 
+    // 先将目标速度写到每个电机的 jv 字段
     for (int i = 0; i < num_nodes_; ++i) 
 	{
 		MOTOR* m = &motors_ptr_[i];
         if (!m->connect) continue;
-		// 左轮
 		if (m->id == left_motor_id_) 
 		{
-			kvaser_->SendSpeedCommand(m, val_left);
+			m->jv = val_left;
 		} 
-		// 右轮
 		else if (m->id == right_motor_id_) 
 		{
-			kvaser_->SendSpeedCommand(m, -val_right);
+			m->jv = val_right;
 		}
     }
+
+    // 一次性同步发出所有电机速度命令（canWrite + canWriteSync）
+    kvaser_->SendSpeedCommandForAll();
 }
 
 
@@ -146,7 +179,7 @@ void MotorDriver::SetPidValues(float k_p, float k_d, float k_i, float k_o) {
   }
 
 
-  for (int i = 1; i <= num_nodes_; ++i) 
+  for (int i = 0; i < num_nodes_; ++i) 
   {
     MOTOR* m = &motors_ptr_[i];
     if (!m->connect) continue;
@@ -212,7 +245,7 @@ MotorDriver::Encoders MotorDriver::ReadEncoderValues()
 	}
 
 	int out1 = 0, out2 = 0;
-	for (int i = 1; i <= num_nodes_; ++i) 
+	for (int i = 0; i < num_nodes_; ++i) 
 	{
 		MOTOR* m = &motors_ptr_[i];
 		if (!m->connect) continue;
@@ -224,11 +257,21 @@ MotorDriver::Encoders MotorDriver::ReadEncoderValues()
 			pos_rad = 0.0;
 		}
 		int milli_rad = static_cast<int>(pos_rad * 1000.0); // milliradians -> int
-		if (i == 1) out1 = milli_rad;
+		if (i == 0) out1 = milli_rad;
 		else out2 = milli_rad;
 	}
 
 	return {out1, out2};
+}
+
+void MotorDriver::UpdateSensorData()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!kvaser_ || !motors_ptr_)
+        return;
+
+    // 通过 TPDO 一次性读取所有电机的位置和速度到 motor->px / motor->vx
+    kvaser_->GetPositionAndVelocity();
 }
 
 double MotorDriver::get_position(int motor_id)
@@ -241,14 +284,14 @@ double MotorDriver::get_position(int motor_id)
         return 0.0;
     }
 
-    // 遍历 motors_ptr_ 找到对应 motor_id 的电机
+    // 直接返回 TPDO 缓存的位置值（由 UpdateSensorData 统一刷新）
     for (int i = 0; i < num_nodes_; ++i) 
 	{
         MOTOR* m = &motors_ptr_[i];
         if (!m->connect) continue;
         if (m->id == motor_id) 
 		{
-            return kvaser_->GetPosition(m);
+            return m->px;
         }
     }
     std::cerr << "Motor ID " << motor_id << " not found!" << std::endl;
@@ -265,17 +308,16 @@ double MotorDriver::get_velocity(int motor_id)
         return 0.0;
     }
 
-    // 遍历 motors_ptr_ 找到对应 motor_id 的电机
+    // 直接返回 TPDO 缓存的速度值（由 UpdateSensorData 统一刷新）
     for (int i = 0; i < num_nodes_; ++i) 
 	{
         MOTOR* m = &motors_ptr_[i];
         if (!m->connect) continue;
         if (m->id == motor_id) 
 		{
-            return kvaser_->GetVelocity(m);
+            return m->vx;
         }
     }
-
 
     std::cerr << "Motor ID " << motor_id << " not found!" << std::endl;
     return 0.0;

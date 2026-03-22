@@ -16,6 +16,7 @@
   <depend>yaml-cpp</depend>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
 
   <!-- 与 lifter_modbus、kvaser_motor_control 通过话题交互，无需直接链接 -->

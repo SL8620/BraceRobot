@@ -35,9 +35,6 @@
 #include <string>
 #include <vector>
 #include "andino_base/kvaser.h"  // <- must expose KvaserForElmo/KvaserForGold/MOTOR and helpers
-// 前向声明（来自 kvaser.h）
-class KvaserForElmo;
-class MOTOR;
 
 namespace andino_base {
 
@@ -60,10 +57,18 @@ class MotorDriver {
   /// @param timeout_ms 通信超时时间（毫秒）
   void Setup(const std::string& serial_device, int32_t baud_rate, int motor_id);
 
+  /// @brief 完成 CAN 初始化：创建 KvaserForGold，连接并配置所有已注册电机。
+  /// 必须在所有 Setup() 和 SetMotorIds() 调用之后调用。
+  void Connect();
+
   /// @brief 发送空命令（保持接口一致，无操作）。
   void SendEmptyMsg();
-  double get_position(int motor_id);   // ← 你要实现的
+  double get_position(int motor_id);
   double get_velocity(int motor_id);
+
+  /// @brief 一次性刷新所有电机的位置和速度缓存（通过 TPDO）。
+  /// 应在 read() 开始时调用一次，之后 get_position/get_velocity 直接读缓存。
+  void UpdateSensorData();
   /// @brief 读取两个电机的编码器值。
   /// @return 左、右电机编码器值（整型）。
   Encoders ReadEncoderValues();
@@ -106,12 +111,9 @@ class MotorDriver {
   // 选择使用的 Kvaser CAN 通道号（默认 0）
   int can_channel_{0};
 
-  // 电机数量（通常为 2）
-  int num_nodes_{6};
+  // 电机数量
+  int num_nodes_{0};
 
-  // 节点 ID 列表（默认 [1,2]，可在 Setup 中修改）
-  std::vector<int> node_ids_;
-  std::vector<MOTOR> motors_;  // 用于存放 MOTOR 对象
   // 超时
   int32_t timeout_ms_{200};
 
